@@ -1,0 +1,4 @@
+build/
+tagsdb/
+tags
+tags_*.src

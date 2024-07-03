@@ -1,0 +1,51 @@
+cmake_minimum_required(VERSION 3.9)
+
+project(pyro)
+
+set(LOCAL_HDRS "")
+set(LOCAL_SRCS "")
+
+add_definitions(-DHSI_VALUE=16000000U)
+add_definitions(-DUSE_HAL_DRIVER)
+add_definitions(-DSTM32L072xx)
+
+set(LINKER_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/linker/STM32L072RBTX_FLASH.ld")
+
+# set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mcpu=cortex-m4 -std=gnu11 -g3 -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage --specs=nano.specs -mfloat-abi=soft -mthumb")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mcpu=cortex-m4 -std=gnu11 -g3 -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -mfloat-abi=soft -mthumb")
+
+set(LOCAL_HDRS 
+    "${CMAKE_CURRENT_SOURCE_DIR}/inc/stm32l0xx_hal_conf.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/inc/stm32l0xx_it.h"
+)
+
+set(LOCAL_SRCS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/stm32l0xx_it.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/system_stm32l0xx.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/syscalls.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/sysmem.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c"
+)
+
+add_executable(${PROJECT_NAME} ${LOCAL_SRCS} ${LOCAL_HDRS})
+
+target_include_directories(${PROJECT_NAME} PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/drivers/CMSIS/core/inc
+)
+target_include_directories(${PROJECT_NAME} PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/drivers/CMSIS/dev/inc
+)
+target_include_directories(${PROJECT_NAME} PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/drivers/hal/inc
+)
+target_include_directories(${PROJECT_NAME} PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/inc
+)
+
+set(CMAKE_EXE_LINKER_FLAGS "-T${LINKER_SCRIPT} -Wl,-Map=${PROJECT_NAME}.map -Wl,--gc-sections -Wl,--start-group -Wl,-lc -Wl,-lm -Wl,--end-group")
+
+add_subdirectory(drivers/hal/src)
+add_subdirectory(startup)
+
+target_link_libraries(${PROJECT_NAME} startup hal)
+
