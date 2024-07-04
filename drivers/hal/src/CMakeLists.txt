@@ -5,7 +5,7 @@ project(hal)
 set(LOCAL_HDRS "")
 set(LOCAL_SRCS "")
 
-add_definitions(-DHSI_VALUE=16000000U)
+add_definitions(-DMSI_VALUE=2097000u)
 add_definitions(-DUSE_HAL_DRIVER)
 add_definitions(-DSTM32L072xx)
 

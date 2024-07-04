@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.9)
 
-project(pyro)
+project(pyro.elf)
 
 set(LOCAL_HDRS "")
 set(LOCAL_SRCS "")
 
-add_definitions(-DHSI_VALUE=16000000U)
+add_definitions(-DMSI_VALUE=2097000u)
 add_definitions(-DUSE_HAL_DRIVER)
 add_definitions(-DSTM32L072xx)
 
@@ -17,6 +17,9 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mcpu=cortex-m4 -std=gnu11 -g3 -O0 -ffunctio
 set(LOCAL_HDRS 
     "${CMAKE_CURRENT_SOURCE_DIR}/inc/stm32l0xx_hal_conf.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/inc/stm32l0xx_it.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/inc/rtc.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/inc/system_init.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/inc/main.h"
 )
 
 set(LOCAL_SRCS
@@ -24,6 +27,8 @@ set(LOCAL_SRCS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/system_stm32l0xx.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/syscalls.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/sysmem.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/rtc.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/system_init.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c"
 )
 
