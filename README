@@ -1,1 +1,16 @@
-mkdir build && cd build && cmake -DCMAKE_TOOLCHAIN_FILE=../toolchain.cmake .. && make -j$(nproc)
+[prepare environment]
+source env.src
+
+[run cmake]
+mkdir build && cd build && cmake -DCMAKE_TOOLCHAIN_FILE=../toolchain.cmake .. 
+
+[build pyro]
+make -j$(nproc)
+
+[run OpenOCD]
+openocd -f pyro_openocd.cfg -s /usr/share/openocd/scripts -s /home/piskun/projects/pyro/openocd -c "gdb_report_data_abort enable"
+
+[gdb]
+arm-none-eabi-gdb build/pyro.elf
+
+target extended-remote :3333
