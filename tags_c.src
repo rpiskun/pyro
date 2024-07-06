@@ -1,0 +1,33 @@
+#!/bin/bash
+
+PROJECT_ROOT_PATH=$(pwd)
+TOOLCHAIN_PATH=$HOME/toolchain/arm-gnu-toolchain-13.2.Rel1-x86_64-arm-none-eabi/arm-none-eabi/include
+TAGSDB_PATH="$PROJECT_ROOT_PATH/tagsdb"
+
+if [ ! -d "$TAGSDB_PATH" ]; then
+	mkdir "$TAGSDB_PATH"
+fi
+
+echo "Generate sources list ..."
+fd '.*\.(h|c|cpp|hpp|cfg)$' --no-ignore --exclude 'test' --exclude 'googletest' --exclude 'gtest' $PROJECT_ROOT_PATH \
+	| tee "$TAGSDB_PATH/ctags.files" "$TAGSDB_PATH/cscope.files" >/dev/null
+
+fd '.*\.(h|c|cpp|hpp|cfg)$' --no-ignore $TOOLCHAIN_PATH \
+	| tee -a "$TAGSDB_PATH/ctags.files" "$TAGSDB_PATH/cscope.files" >/dev/null
+
+pushd .
+cd "$TAGSDB_PATH"
+
+echo "Generating cscope tags ..."
+cscope -b -q -i "$TAGSDB_PATH/cscope.files"
+export CSCOPE_DB="$TAGSDB_PATH/cscope.out"
+echo "Exported CSCOPE_DB to: '$CSCOPE_DB'"
+
+popd
+
+echo "Generating ctags tags ..."
+ctags -L "$TAGSDB_PATH/ctags.files"
+export CTAGS_DB="tags"
+echo "Exported CTAGS_DB to: '$CTAGS_DB'"
+
+echo "Done"
