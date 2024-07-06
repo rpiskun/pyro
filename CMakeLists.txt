@@ -51,7 +51,8 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 set(CMAKE_EXE_LINKER_FLAGS "-T${LINKER_SCRIPT} --specs=nano.specs -Wl,-Map=${PROJECT_NAME}.map -Wl,--gc-sections -Wl,--start-group -Wl,-lc -Wl,-lm -Wl,--end-group")
 
 add_subdirectory(drivers/hal/src)
+add_subdirectory(drivers/pyd1588/src)
 add_subdirectory(startup)
 
-target_link_libraries(${PROJECT_NAME} startup hal)
+target_link_libraries(${PROJECT_NAME} startup hal pyd1588)
 
