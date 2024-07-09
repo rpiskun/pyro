@@ -2,6 +2,7 @@
 #define PYD1588_H
 
 #include <stdint.h>
+#include <stdbool.h>
 #include "stm32l0xx_hal.h"
 
 /* count mode */
@@ -28,8 +29,8 @@
 #define PYD1588_RESERVED1   (0u)
 #define PYD1588_RESERVED2   (2u)
 
-union pyd1588_config {
-    struct {
+union Pyd1588Config {
+    struct __attribute__((packed, aligned(1))) {
         uint8_t count_mode: 1;
         uint8_t reserved1: 1;
         uint8_t hpf_cutoff: 1;
@@ -44,6 +45,21 @@ union pyd1588_config {
     uint32_t word;
 };
 
-extern const union pyd1588_config pyd_default_config;
+union Pyd1588RxData {
+    struct __attribute__((packed, aligned(1))) {
+        uint32_t conf: 25;
+        uint16_t adc_val: 14;
+        uint8_t out_of_range: 1;
+    } fields;
+    uint64_t word;
+};
+
+extern const union Pyd1588Config Pyd1588DefaultConfig;
+
+int Pyro_Init(void);
+bool Pyro_IsReady(void);
+int Pyro_WriteAsync(uint32_t data);
+int Pyro_ReadAsync(void);
+int Pyro_ReadRxData(union Pyd1588RxData *data);
 
 #endif /* PYD1588_H */

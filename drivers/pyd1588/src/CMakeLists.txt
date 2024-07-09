@@ -9,7 +9,7 @@ add_definitions(-DMSI_VALUE=2097000u)
 add_definitions(-DUSE_HAL_DRIVER)
 add_definitions(-DSTM32L072xx)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mcpu=cortex-m0plus -std=gnu11 -g3 -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -mfloat-abi=soft -mthumb")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mcpu=cortex-m0plus -std=gnu11 -g3 -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -mfloat-abi=soft -mthumb -Wno-packed-bitfield-compat")
 
 set(LOCAL_HDRS 
     "${CMAKE_CURRENT_SOURCE_DIR}/../inc/pyd1588.h"
