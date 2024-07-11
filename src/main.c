@@ -54,7 +54,6 @@ int main(void)
             break;
         }
     }
-
     return 0;
 }
 
@@ -65,7 +64,9 @@ int system_init(void)
     do {
         HAL_Init();
 
-        status = clock_init();
+        // status = clock_init_msi();
+        // status = clock_init_hsi();
+        status = clock_init_max();
         if (status < 0) {
             break;
         }
