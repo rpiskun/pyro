@@ -29,6 +29,12 @@
 #define PYD1588_RESERVED1   (0u)
 #define PYD1588_RESERVED2   (2u)
 
+enum PyroRxFrameType {
+    E_RX_FRAME_UNKNOWN = 0,
+    E_RX_FRAME_FULL,
+    E_RX_FRAME_ADC
+};
+
 union Pyd1588Config {
     struct __attribute__((packed, aligned(1))) {
         uint8_t count_mode: 1;
@@ -45,13 +51,10 @@ union Pyd1588Config {
     uint32_t word;
 };
 
-union Pyd1588RxData {
-    struct __attribute__((packed, aligned(1))) {
-        uint32_t conf: 25;
-        uint16_t adc_val: 14;
-        uint8_t out_of_range: 1;
-    } fields;
-    uint64_t word;
+struct Pyd1588RxData {
+    union Pyd1588Config conf;
+    int16_t adc_val;
+    uint8_t out_of_range;
 };
 
 extern const union Pyd1588Config Pyd1588DefaultConfig;
@@ -59,7 +62,7 @@ extern const union Pyd1588Config Pyd1588DefaultConfig;
 int Pyro_Init(void);
 bool Pyro_IsReady(void);
 int Pyro_WriteAsync(uint32_t data);
-int Pyro_ReadAsync(void);
-int Pyro_ReadRxData(union Pyd1588RxData *data);
+int Pyro_ReadAsync(enum PyroRxFrameType frame_type);
+int Pyro_ReadRxData(struct Pyd1588RxData *data);
 
 #endif /* PYD1588_H */
