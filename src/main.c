@@ -17,7 +17,6 @@ enum PyroReadState {
 
 static enum PyroReadState pyro_state = E_PYRO_READ_IDLE;
 static struct Pyd1588RxData pyro_rx_data = { 0 };
-static union Pyd1588Config pyro_rx_conf = { 0 };
 static int32_t pyro_delay = 0;
 
 static void error_handler(void);
@@ -80,8 +79,8 @@ int main(void)
         case E_PYRO_READ_IDLE:
             pyro_ready = Pyro_IsReady();
             if (pyro_ready) {
-                Pyro_ReadAsync(E_RX_FRAME_ADC);
-                // Pyro_ReadAsync(E_RX_FRAME_FULL);
+                // Pyro_ReadAsync(E_RX_FRAME_ADC);
+                Pyro_ReadAsync(E_RX_FRAME_FULL);
                 pyro_state = E_PYRO_WAIT_READ;
             }
             break;
@@ -90,7 +89,6 @@ int main(void)
             pyro_ready = Pyro_IsReady();
             if (pyro_ready) {
                 (void)Pyro_ReadRxData(&pyro_rx_data);
-                // pyro_rx_conf.word = pyro_rx_data.conf;
                 /* ================== */
                 pyro_delay = PYRO_DELAY_TIMEOUT;
                 /* ================== */

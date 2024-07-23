@@ -20,15 +20,15 @@
 #define PYRO_PRESCALER  (320u)
 
 #if (PYRO_PRESCALER == 320)
-#define PYRO_TX_PERIOD_NORMAL           (9u)
-#define PYRO_TX_PERIOD_ENDSEQ           (67u)
-#define PYRO_RX_PERIOD_START_SEQ        (13u)
-#define PYRO_RX_PERIOD_RD_BIT           (2u)
-#define PYRO_RX_PERIOD_ENDSEQ           (126u)
+#define PYRO_TX_PERIOD_NORMAL           (13u)
+#define PYRO_TX_PERIOD_ENDSEQ           (75u)
+#define PYRO_RX_PERIOD_START_SEQ        (14u)
+#define PYRO_RX_PERIOD_RD_BIT           (1u)
+#define PYRO_RX_PERIOD_ENDSEQ           (140u)
 #elif (PYRO_PRESCALER == 32)
 #define PYRO_TX_PERIOD_NORMAL           (90u)
 #define PYRO_TX_PERIOD_ENDSEQ           (670u)
-#define PYRO_RX_PERIOD_START_SEQ        (130u)
+#define PYRO_RX_PERIOD_START_SEQ        (140u)
 #define PYRO_RX_PERIOD_RD_BIT           (20u)
 #define PYRO_RX_PERIOD_ENDSEQ           (1260u)
 #else
@@ -37,24 +37,15 @@
 
 #define PYD_MSB_BIT     (0x1000000)
 
-#define PYD_RX_OUT_OF_RANGE_BIT     (39u)
-#define PYD_RX_OUT_OF_RANGE_MASK    (0x01u)
-#define PYD_RX_ADC_VALUE_BIT        (25u)
-#define PYD_RX_ADC_VALUE_MASK       (0x7FFFu)
-#define PYD_RX_ADC_CONFIG_BIT       (0u)
-#define PYD_RX_ADC_CONFIG_MASK      (0x1FFFFFFu)
-
 #define PYD_READ_BITS_NUM_FULL      (40u)
 #define PYD_READ_BITS_NUM_ADC       (15u)
-#define PYD_BITS_SHIFT_FULL_FRAME   (0u)
-#define PYD_BITS_SHIFT_ADC_FRAME    (25u)
 
 #define PYD_ADC_RAWVALUE_MASK       (0x3FFFu)
 #define PYD_ADC_SIGN_BITMASK        (0x2000u)
 #define PYD_ADC_VALUE_BITMASK       (0x1FFFu)
 
 #define PYD_RX_CONFIG_MASK          (0x1FFFFFFu)
-#define PYD_RX_OUT_OF_RANGE_MASK    (1 << 39u)
+#define PYD_RX_OUT_OF_RANGE_MASK    ((uint64_t)1 << 39u)
 
 const union Pyd1588Config Pyd1588DefaultConfig = {
         .fields.count_mode = PYD1588_COUNT_MODE_WITH_BPF,
@@ -403,13 +394,12 @@ static inline __attribute__((always_inline)) void Pyro_TransactionFSM(void)
         break;
 
     case E_RX_STATE_RD_BIT:
-        if (PYD_DIRECT_LINK_PORT->IDR & PYD_DL_PIN_IDR) {
-            transaction_ctl.rx_frame |= 1;
-        }
-        transaction_ctl.idx--;
-
         if (transaction_ctl.idx > 0) {
-            transaction_ctl.rx_frame <<= 1;
+            /* if DL is high - set 1, otherwise left it as 0 */
+            if (PYD_DIRECT_LINK_PORT->IDR & PYD_DL_PIN_IDR) {
+                transaction_ctl.rx_frame |= (1 << (transaction_ctl.idx - 1));
+            }
+            transaction_ctl.idx--;
             Pyro_UpdateDlPin();
         } else {
             /* update autoreload reg for rx end sequence */
