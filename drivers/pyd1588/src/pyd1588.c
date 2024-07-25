@@ -3,6 +3,8 @@
 
 #define PYD_SERIAL_IN_PORT      GPIOC
 #define PYD_SERIAL_IN_PIN       GPIO_PIN_2
+#define PYD_SERIAL_IN_PIN_LOW   GPIO_PIN_2
+#define PYD_SERIAL_IN_PIN_HIGH  (0u)
 #define PYD_DIRECT_LINK_PORT    GPIOC
 #define PYD_DIRECT_LINK_PIN     GPIO_PIN_0
 
@@ -17,19 +19,20 @@
 
 #define PYD_CONFIG_BITS_NUM     (25u)
 
-#define PYRO_PRESCALER  (320u)
+// #define PYRO_PRESCALER  (320u)
+#define PYRO_PRESCALER  (32u)
 
 #if (PYRO_PRESCALER == 320)
-#define PYRO_TX_PERIOD_NORMAL           (13u)
-#define PYRO_TX_PERIOD_ENDSEQ           (75u)
-#define PYRO_RX_PERIOD_START_SEQ        (14u)
+#define PYRO_TX_PERIOD_NORMAL           (9u)
+#define PYRO_TX_PERIOD_ENDSEQ           (67u)
+#define PYRO_RX_PERIOD_START_SEQ        (12u)
 #define PYRO_RX_PERIOD_RD_BIT           (1u)
-#define PYRO_RX_PERIOD_ENDSEQ           (140u)
+#define PYRO_RX_PERIOD_ENDSEQ           (130u)
 #elif (PYRO_PRESCALER == 32)
-#define PYRO_TX_PERIOD_NORMAL           (90u)
+#define PYRO_TX_PERIOD_NORMAL           (95u)
 #define PYRO_TX_PERIOD_ENDSEQ           (670u)
-#define PYRO_RX_PERIOD_START_SEQ        (140u)
-#define PYRO_RX_PERIOD_RD_BIT           (20u)
+#define PYRO_RX_PERIOD_START_SEQ        (120u)
+#define PYRO_RX_PERIOD_RD_BIT           (12u)
 #define PYRO_RX_PERIOD_ENDSEQ           (1260u)
 #else
 #error  "PYRO_PRESCALER value is not supported"
@@ -46,6 +49,10 @@
 
 #define PYD_RX_CONFIG_MASK          (0x1FFFFFFu)
 #define PYD_RX_OUT_OF_RANGE_MASK    ((uint64_t)1 << 39u)
+
+#define ASM_NOP_DELAY    \
+    asm volatile("nop"); \
+    asm volatile("nop")
 
 const union Pyd1588Config Pyd1588DefaultConfig = {
         .fields.count_mode = PYD1588_COUNT_MODE_WITH_BPF,
@@ -72,7 +79,7 @@ enum PyroTransactionState {
 struct PyroTransactionCtl {
     uint64_t rx_frame;
     uint32_t tx_frame;
-    int32_t idx;
+    int32_t bit_pos;
     enum PyroTransactionState state;
     enum PyroRxFrameType frame_type;
 };
@@ -81,14 +88,14 @@ static TIM_HandleTypeDef pyro_tim = { 0 };
 static volatile struct PyroTransactionCtl transaction_ctl = {
     .rx_frame = 0,
     .tx_frame = 0,
-    .idx = 0,
+    .bit_pos = 0,
     .state = E_STATE_IDLE,
     .frame_type = E_RX_FRAME_UNKNOWN
 };
 
 static int Pyro_GpioInit(void);
 static int Pyro_TimerInit(void);
-static inline void Pyro_UpdateSiPin(void);
+static inline void Pyro_UpdateSiPin(uint32_t pin_state);
 static inline void Pyro_UpdateDlPin(void);
 static inline void Pyro_TransactionFSM(void);
 static inline void Pyro_SetDlPinOut(void);
@@ -157,19 +164,18 @@ int Pyro_WriteAsync(uint32_t data)
     int retval = 0;
 
     do {
-        if (transaction_ctl.state != E_STATE_IDLE) {
-            retval = -1;
-            break;
-        }
+        /* force reset FSM to idle state to prevent deadlock
+         * caller should check if pyro driver is ready to request new write */
+        (void)HAL_TIM_Base_Stop_IT(&pyro_tim);
+        transaction_ctl.state = E_STATE_IDLE;
 
-        transaction_ctl.idx = PYD_CONFIG_BITS_NUM;
+        transaction_ctl.tx_frame = data;
+        transaction_ctl.bit_pos = PYD_CONFIG_BITS_NUM;
         
         /* during config update DirectLink should be low */
         /* set BRR first to prevent rising edge after switch pin from in to out */
         PYD_DIRECT_LINK_PORT->BRR = PYD_DIRECT_LINK_PIN;
         Pyro_SetDlPinOut();
-
-        Pyro_UpdateSiPin();
 
         /* update autoreload reg before start */
         pyro_tim.Instance->ARR = PYRO_TX_PERIOD_NORMAL;
@@ -195,16 +201,17 @@ int Pyro_ReadAsync(enum PyroRxFrameType frame_type)
     int retval = -1;
 
     do {
-        if (transaction_ctl.state != E_STATE_IDLE) {
-            break;
-        }
+        /* force reset FSM to idle state to prevent deadlock
+         * caller should check if pyro driver is ready to request new read */
+        (void)HAL_TIM_Base_Stop_IT(&pyro_tim);
+        transaction_ctl.state = E_STATE_IDLE;
 
         int32_t rx_bits = Pyro_GetRxBitsNum(frame_type);
         if (rx_bits <= 0) {
             break;
         }
 
-        transaction_ctl.idx = rx_bits;
+        transaction_ctl.bit_pos = rx_bits - 1;
         transaction_ctl.frame_type = frame_type;
         /* update autoreload reg before start */
         pyro_tim.Instance->ARR = PYRO_RX_PERIOD_START_SEQ;
@@ -227,7 +234,7 @@ int Pyro_ReadAsync(enum PyroRxFrameType frame_type)
     return retval;
 }
 
-int Pyro_ReadRxData(struct Pyd1588RxData *data)
+int Pyro_GetRxData(struct Pyd1588RxData *data)
 {
     int retval = 0;
 
@@ -241,7 +248,6 @@ int Pyro_ReadRxData(struct Pyd1588RxData *data)
             retval = -1;
             break;
         }
-        // data->out_of_range = transaction_ctl.rx_frame;
         uint16_t adc_raw = Pyro_GetAdcRawData(transaction_ctl.rx_frame, transaction_ctl.frame_type);
         /* check sign of adc value */
         int16_t signed_adc = 0;
@@ -250,7 +256,7 @@ int Pyro_ReadRxData(struct Pyd1588RxData *data)
             signed_adc = ((~(adc_raw & PYD_ADC_VALUE_BITMASK)) + 1) * (-1);
         } else {
             /* value is positive */
-            signed_adc = adc_raw & PYD_ADC_VALUE_BITMASK;
+            signed_adc = adc_raw;
         }
 
         data->adc_val = signed_adc;
@@ -306,46 +312,30 @@ static int Pyro_TimerInit(void)
     return retval;
 }
 
-static inline __attribute__((always_inline)) void Pyro_UpdateSiPin(void)
+static inline __attribute__((always_inline)) void Pyro_UpdateSiPin(uint32_t pin_state)
 {
-    /* bit start condition */
-    /* reset SrialIn pin */
+    /* bit start condition: SerialIn low -> high */
+    /* set SrialIn pin to low */
     PYD_SERIAL_IN_PORT->BRR = PYD_SERIAL_IN_PIN;
-    /* set SrialIn pin */
+    /* keep pin in low for approx 300 ns */
+    ASM_NOP_DELAY;
+    /* set SrialIn pin to high */
     PYD_SERIAL_IN_PORT->BSRR = PYD_SERIAL_IN_PIN;
 
-    /* if MSB bit is 0 - reset SerialIn pin;
-     * if MSB bit is 1 - SerialIn is already set */
-    if (!(transaction_ctl.tx_frame & PYD_MSB_BIT)) {
-        PYD_SERIAL_IN_PORT->BRR = PYD_SERIAL_IN_PIN;
-    }
+    /* keep pin in high for approx 300 ns */
+    ASM_NOP_DELAY;
+
+    /* since SerialIn pin is already set to high, we have only to reset the pin if 0 has to be transmitted */
+    PYD_SERIAL_IN_PORT->BRR = pin_state;
 }
 
 static inline __attribute__((always_inline)) void Pyro_SetDlPinOut(void)
 {
-#if 0
-    uint32_t tmpval = 0;
-
-    tmpval = PYD_DIRECT_LINK_PORT->MODER;
-    tmpval &= PYD_DL_PIN_MODE_CLR;
-    tmpval |= PYD_DL_PIN_MODE_OUT;
-    /* pin mode = output */
-    PYD_DIRECT_LINK_PORT->MODER = tmpval;
-#endif 
     PYD_DIRECT_LINK_PORT->MODER |= PYD_DL_PIN_MODE_OUT;
 }
 
 static inline __attribute__((always_inline)) void Pyro_SetDlPinIn(void)
 {
-#if 0
-    uint32_t tmpval = 0;
-
-    tmpval = PYD_DIRECT_LINK_PORT->MODER;
-    tmpval &= PYD_DL_PIN_MODE_CLR;
-    tmpval |= PYD_DL_PIN_MODE_IN;
-    /* pin mode = in */
-    PYD_DIRECT_LINK_PORT->MODER = tmpval;
-#endif
     PYD_DIRECT_LINK_PORT->MODER &= PYD_DL_PIN_MODE_CLR;
 }
 
@@ -354,10 +344,13 @@ static inline __attribute__((always_inline)) void Pyro_UpdateDlPin(void)
     /* set BRR first to prevent rising edge after switch pin from in to out */
     PYD_DIRECT_LINK_PORT->BRR = PYD_DIRECT_LINK_PIN;
     Pyro_SetDlPinOut();
+    /* keep pin state for approx 300 ns */
+    ASM_NOP_DELAY;
 
-    // PYD_DIRECT_LINK_PORT->BRR = PYD_DIRECT_LINK_PIN;
     /* set pin high */
     PYD_DIRECT_LINK_PORT->BSRR = PYD_DIRECT_LINK_PIN;
+    /* don't use delay to keep in high state since additional instuctions has to be executed
+     * to switch pin from input to output - update MODER register */
 
     Pyro_SetDlPinIn();
 }
@@ -366,17 +359,19 @@ static inline __attribute__((always_inline)) void Pyro_TransactionFSM(void)
 {
     switch (transaction_ctl.state) {
     case E_TX_STATE_WR_BIT:
-        transaction_ctl.idx--;
-        if (transaction_ctl.idx > 0) {
-            transaction_ctl.tx_frame <<= 1;
-            Pyro_UpdateSiPin();
-        } else {
+        if (transaction_ctl.bit_pos < 0) {
             /* update autoreload reg for end sequence */
             pyro_tim.Instance->ARR = PYRO_TX_PERIOD_ENDSEQ;
             /* set serial in pin to low */
             PYD_SERIAL_IN_PORT->BRR = PYD_SERIAL_IN_PIN;
             /* all bits are sent - start end sequence */
             transaction_ctl.state = E_TX_STATE_END_SEQ;
+        } else {
+            transaction_ctl.bit_pos--;
+            uint32_t bit_state = (transaction_ctl.tx_frame & ((uint32_t)1 << transaction_ctl.bit_pos));
+            uint32_t tx_pin_state = (bit_state) ? PYD_SERIAL_IN_PIN_HIGH: PYD_SERIAL_IN_PIN_LOW;
+
+            Pyro_UpdateSiPin(tx_pin_state);
         }
         break;
 
@@ -394,20 +389,21 @@ static inline __attribute__((always_inline)) void Pyro_TransactionFSM(void)
         break;
 
     case E_RX_STATE_RD_BIT:
-        if (transaction_ctl.idx > 0) {
-            /* if DL is high - set 1, otherwise left it as 0 */
-            if (PYD_DIRECT_LINK_PORT->IDR & PYD_DL_PIN_IDR) {
-                transaction_ctl.rx_frame |= (1 << (transaction_ctl.idx - 1));
-            }
-            transaction_ctl.idx--;
-            Pyro_UpdateDlPin();
-        } else {
-            /* update autoreload reg for rx end sequence */
+        if (transaction_ctl.bit_pos < 0) {
+            /* transaction is finished; update autoreload reg for rx end sequence */
             pyro_tim.Instance->ARR = PYRO_RX_PERIOD_ENDSEQ;
             Pyro_SetDlPinOut();
             /* reset DirectLink pin */
             PYD_DIRECT_LINK_PORT->BRR = PYD_DIRECT_LINK_PIN;
             transaction_ctl.state = E_RX_STATE_END_SEQ;
+        } else  {
+            /* transaction is ongoing */
+            /* if DL is high - set 1, otherwise left it as 0 */
+            if (PYD_DIRECT_LINK_PORT->IDR & PYD_DL_PIN_IDR) {
+                transaction_ctl.rx_frame |= ((uint64_t)1 << transaction_ctl.bit_pos);
+            }
+            transaction_ctl.bit_pos--;
+            Pyro_UpdateDlPin();
         }
         break;
 

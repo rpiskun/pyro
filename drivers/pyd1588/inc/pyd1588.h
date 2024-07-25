@@ -63,6 +63,6 @@ int Pyro_Init(void);
 bool Pyro_IsReady(void);
 int Pyro_WriteAsync(uint32_t data);
 int Pyro_ReadAsync(enum PyroRxFrameType frame_type);
-int Pyro_ReadRxData(struct Pyd1588RxData *data);
+int Pyro_GetRxData(struct Pyd1588RxData *data);
 
 #endif /* PYD1588_H */
