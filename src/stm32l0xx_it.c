@@ -1,3 +1,4 @@
+#include "stm32l0xx_hal.h"
 #include "stm32l0xx_it.h"
 /******************************************************************************/
 /*           Cortex-M0+ Processor Interruption and Exception Handlers          */
@@ -41,6 +42,6 @@ void PendSV_Handler(void)
   */
 void SysTick_Handler(void)
 {
-    // HAL_IncTick();
+    HAL_IncTick();
 }
 
