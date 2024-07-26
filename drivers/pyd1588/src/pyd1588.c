@@ -97,7 +97,7 @@ static volatile struct PyroTransactionCtl transaction_ctl = {
 static int Pyro_GpioInit(void);
 static int Pyro_TimerInit(void);
 static inline void Pyro_UpdateSiPin(uint32_t pin_state);
-static inline void Pyro_UpdateDlPin(void);
+static inline void Pyro_ReadBitSeq(void);
 static inline void Pyro_TransactionFSM(void);
 static inline void Pyro_SetDlPinOut(void);
 static inline void Pyro_SetDlPinIn(void);
@@ -341,7 +341,7 @@ static inline __attribute__((always_inline)) void Pyro_SetDlPinIn(void)
     PYD_DIRECT_LINK_PORT->MODER &= PYD_DL_PIN_MODE_CLR;
 }
 
-static inline __attribute__((always_inline)) void Pyro_UpdateDlPin(void)
+static inline __attribute__((always_inline)) void Pyro_ReadBitSeq(void)
 {
     /* set BRR first to prevent rising edge after switch pin from in to out */
     PYD_DIRECT_LINK_PORT->BRR = PYD_DIRECT_LINK_PIN;
@@ -386,7 +386,7 @@ static inline __attribute__((always_inline)) void Pyro_TransactionFSM(void)
         transaction_ctl.rx_frame = 0;
         /* update autoreload reg for rx start sequence */
         pyro_tim.Instance->ARR = PYRO_RX_PERIOD_RD_BIT;
-        Pyro_UpdateDlPin();
+        Pyro_ReadBitSeq();
         transaction_ctl.state = E_RX_STATE_RD_BIT;
         break;
 
@@ -405,7 +405,7 @@ static inline __attribute__((always_inline)) void Pyro_TransactionFSM(void)
                 transaction_ctl.rx_frame |= ((uint64_t)1 << transaction_ctl.bit_pos);
             }
             transaction_ctl.bit_pos--;
-            Pyro_UpdateDlPin();
+            Pyro_ReadBitSeq();
         }
         break;
 
