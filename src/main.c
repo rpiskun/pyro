@@ -1,23 +1,8 @@
 #include <stdbool.h>
 #include "system_init.h"
 #include "rtc.h"
-#include "pyd1588.h"
+#include "pyro_fsm.h"
 #include "main.h"
-
-#define PYRO_DELAY_TIMEOUT      (160000)
-
-enum PyroReadState {
-    E_PYRO_WRITE_IDLE = 0,
-    E_PYRO_WAIT_WRITE,
-    E_PYRO_WAIT_CONFIG_APPLIED,
-    E_PYRO_READ_IDLE,
-    E_PYRO_WAIT_READ,
-    E_PYRO_DELAY,
-};
-
-static enum PyroReadState pyro_state = E_PYRO_READ_IDLE;
-static struct Pyd1588RxData pyro_rx_data = { 0 };
-static int32_t pyro_delay = 0;
 
 static void error_handler(void);
 static int system_init(void);
@@ -25,7 +10,6 @@ static int system_init(void);
 int main(void)
 {
     int status = 0;
-    bool pyro_ready = false;
     union Pyd1588Config pyro_conf = {
         .fields.threshold = 200u,
         .fields.blind_time = 3u,
@@ -49,59 +33,11 @@ int main(void)
         error_handler();
     }
 
-    (void)Pyro_WriteAsync(Pyd1588DefaultConfig.word);
+    Pyro_UpdateConf(pyro_conf);
+    (void)Pyro_StartAdcRead();
 
     while(1) {
-        switch (pyro_state)
-        {
-        case E_PYRO_WRITE_IDLE:
-            pyro_ready = Pyro_IsReady();
-            if (pyro_ready) {
-                Pyro_WriteAsync(pyro_conf.word);
-                pyro_state = E_PYRO_WAIT_WRITE;
-            }
-            break;
-
-        case E_PYRO_WAIT_WRITE:
-            pyro_ready = Pyro_IsReady();
-            if (pyro_ready) {
-                pyro_delay = PYRO_DELAY_TIMEOUT;
-                pyro_state = E_PYRO_WAIT_CONFIG_APPLIED;
-            }
-            break;
-
-        case E_PYRO_WAIT_CONFIG_APPLIED:
-            if (--pyro_delay < 0) {
-                pyro_state = E_PYRO_READ_IDLE;
-            }
-            break;
-
-        case E_PYRO_READ_IDLE:
-            pyro_ready = Pyro_IsReady();
-            if (pyro_ready) {
-                // Pyro_ReadAsync(E_RX_FRAME_ADC);
-                Pyro_ReadAsync(E_RX_FRAME_FULL);
-                pyro_state = E_PYRO_WAIT_READ;
-            }
-            break;
-
-        case E_PYRO_WAIT_READ:
-            pyro_ready = Pyro_IsReady();
-            if (pyro_ready) {
-                (void)Pyro_ReadRxData(&pyro_rx_data);
-                /* ================== */
-                pyro_delay = PYRO_DELAY_TIMEOUT;
-                /* ================== */
-                pyro_state = E_PYRO_DELAY;
-            }
-            break;
-
-        case E_PYRO_DELAY:
-            if (--pyro_delay < 0) {
-                pyro_state = E_PYRO_WRITE_IDLE;
-            }
-            break;
-        }
+        Pyro_Fsm();
     }
     return 0;
 }
