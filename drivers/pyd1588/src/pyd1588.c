@@ -48,7 +48,8 @@
 #define PYD_ADC_VALUE_BITMASK       (0x1FFFu)
 
 #define PYD_RX_CONFIG_MASK          (0x1FFFFFFu)
-#define PYD_RX_OUT_OF_RANGE_MASK    ((uint64_t)1 << 39u)
+#define PYD_RX_OOR_MASK_FULL_FRAME   ((uint64_t)1 << 39u)
+#define PYD_RX_OOR_MASK_ADC_FRAME    ((uint64_t)1 << 14u)
 
 #define ASM_NOP_DELAY    \
     asm volatile("nop"); \
@@ -102,6 +103,7 @@ static inline void Pyro_SetDlPinOut(void);
 static inline void Pyro_SetDlPinIn(void);
 static int32_t Pyro_GetRxBitsNum(enum PyroRxFrameType frame_type);
 static uint16_t Pyro_GetAdcRawData(uint64_t rx_frame, enum PyroRxFrameType frame_type);
+static uint8_t Pyro_GetOutOfRangeBit(uint64_t rx_frame, enum PyroRxFrameType frame_type);
 
 int Pyro_Init(void)
 {
@@ -253,7 +255,7 @@ int Pyro_GetRxData(struct Pyd1588RxData *data)
         int16_t signed_adc = 0;
         if (adc_raw & PYD_ADC_SIGN_BITMASK) {
             /* 13th bit is 1 - negative value */
-            signed_adc = ((~(adc_raw & PYD_ADC_VALUE_BITMASK)) + 1) * (-1);
+            signed_adc = ((((~adc_raw) & PYD_ADC_VALUE_BITMASK)) + 1) * (-1);
         } else {
             /* value is positive */
             signed_adc = adc_raw;
@@ -261,7 +263,7 @@ int Pyro_GetRxData(struct Pyd1588RxData *data)
 
         data->adc_val = signed_adc;
         data->conf.word = transaction_ctl.rx_frame & PYD_RX_CONFIG_MASK;
-        data->out_of_range = transaction_ctl.rx_frame & PYD_RX_OUT_OF_RANGE_MASK;
+        data->out_of_range = Pyro_GetOutOfRangeBit(transaction_ctl.rx_frame, transaction_ctl.frame_type);
     } while (0);
 
     return retval;
@@ -450,6 +452,22 @@ static uint16_t Pyro_GetAdcRawData(uint64_t rx_frame, enum PyroRxFrameType frame
     }
 
     retval = (rx_frame >> bitshift) & PYD_ADC_RAWVALUE_MASK;
+
+    return retval;
+}
+
+static uint8_t Pyro_GetOutOfRangeBit(uint64_t rx_frame, enum PyroRxFrameType frame_type)
+{
+    uint8_t retval = 0;
+    uint64_t bitmask = PYD_RX_OOR_MASK_ADC_FRAME;
+
+    if (frame_type == E_RX_FRAME_FULL) {
+        bitmask = PYD_RX_OOR_MASK_FULL_FRAME;
+    }
+
+    if (rx_frame & bitmask) {
+        retval = 1;
+    }
 
     return retval;
 }
