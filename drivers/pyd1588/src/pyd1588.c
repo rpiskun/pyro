@@ -15,27 +15,27 @@
 #define PYD_DL_PIN_PUPD_CLR     (0xFFFFFFFCu);
 #define PYD_DL_PIN_IDR          (0x00000001u)
 
-#define PYRO_HW_TIMER           TIM6
+#define PYD_HW_TIMER           TIM6
 
 #define PYD_CONFIG_BITS_NUM     (25u)
 
-// #define PYRO_PRESCALER  (320u)
-#define PYRO_PRESCALER  (32u)
+// #define PYD_PRESCALER  (320u)
+#define PYD_PRESCALER  (32u)
 
-#if (PYRO_PRESCALER == 320)
-#define PYRO_TX_PERIOD_NORMAL           (9u)
-#define PYRO_TX_PERIOD_ENDSEQ           (67u)
-#define PYRO_RX_PERIOD_START_SEQ        (12u)
-#define PYRO_RX_PERIOD_RD_BIT           (1u)
-#define PYRO_RX_PERIOD_ENDSEQ           (130u)
-#elif (PYRO_PRESCALER == 32)
-#define PYRO_TX_PERIOD_NORMAL           (95u)
-#define PYRO_TX_PERIOD_ENDSEQ           (670u)
-#define PYRO_RX_PERIOD_START_SEQ        (120u)
-#define PYRO_RX_PERIOD_RD_BIT           (12u)
-#define PYRO_RX_PERIOD_ENDSEQ           (1260u)
+#if (PYD_PRESCALER == 320)
+#define PYD_TX_PERIOD_NORMAL           (9u)
+#define PYD_TX_PERIOD_ENDSEQ           (67u)
+#define PYD_RX_PERIOD_START_SEQ        (12u)
+#define PYD_RX_PERIOD_RD_BIT           (1u)
+#define PYD_RX_PERIOD_ENDSEQ           (130u)
+#elif (PYD_PRESCALER == 32)
+#define PYD_TX_PERIOD_NORMAL           (95u)
+#define PYD_TX_PERIOD_ENDSEQ           (670u)
+#define PYD_RX_PERIOD_START_SEQ        (120u)
+#define PYD_RX_PERIOD_RD_BIT           (12u)
+#define PYD_RX_PERIOD_ENDSEQ           (1260u)
 #else
-#error  "PYRO_PRESCALER value is not supported"
+#error  "PYD_PRESCALER value is not supported"
 #endif
 
 #define PYD_MSB_BIT     (0x1000000)
@@ -125,12 +125,12 @@ int Pyro_Init(void)
 
 void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* tim_baseHandle)
 {
-    if (tim_baseHandle->Instance == PYRO_HW_TIMER)
+    if (tim_baseHandle->Instance == PYD_HW_TIMER)
     {
-        /* PYRO_HW_TIMER clock enable */
+        /* PYD_HW_TIMER clock enable */
         __HAL_RCC_TIM6_CLK_ENABLE();
 
-        /* PYRO_HW_TIMER interrupt Init */
+        /* PYD_HW_TIMER interrupt Init */
         HAL_NVIC_SetPriority(TIM6_DAC_IRQn, 0, 0);
         HAL_NVIC_EnableIRQ(TIM6_DAC_IRQn);
     }
@@ -138,7 +138,7 @@ void HAL_TIM_Base_MspInit(TIM_HandleTypeDef* tim_baseHandle)
 
 void HAL_TIM_Base_MspDeInit(TIM_HandleTypeDef* tim_baseHandle)
 {
-    if (tim_baseHandle->Instance == PYRO_HW_TIMER)
+    if (tim_baseHandle->Instance == PYD_HW_TIMER)
     {
         /* Peripheral clock disable */
         __HAL_RCC_TIM6_CLK_DISABLE();
@@ -180,9 +180,9 @@ int Pyro_WriteAsync(uint32_t data)
         Pyro_SetDlPinOut();
 
         /* update autoreload reg before start */
-        pyro_tim.Instance->ARR = PYRO_TX_PERIOD_NORMAL;
+        pyro_tim.Instance->ARR = PYD_TX_PERIOD_NORMAL;
         /* update prescaler reg before start */
-        pyro_tim.Instance->PSC = PYRO_PRESCALER;
+        pyro_tim.Instance->PSC = PYD_PRESCALER;
         __HAL_TIM_CLEAR_IT(&pyro_tim, TIM_IT_UPDATE);
         transaction_ctl.state = E_TX_STATE_WR_BIT;
         HAL_StatusTypeDef status = HAL_TIM_Base_Start_IT(&pyro_tim);
@@ -216,11 +216,11 @@ int Pyro_ReadAsync(enum PyroRxFrameType frame_type)
         transaction_ctl.bit_pos = rx_bits - 1;
         transaction_ctl.frame_type = frame_type;
         /* update autoreload reg before start */
-        pyro_tim.Instance->ARR = PYRO_RX_PERIOD_START_SEQ;
+        pyro_tim.Instance->ARR = PYD_RX_PERIOD_START_SEQ;
         /* update prescaler reg before start */
-        pyro_tim.Instance->PSC = PYRO_PRESCALER;
+        pyro_tim.Instance->PSC = PYD_PRESCALER;
         Pyro_SetDlPinOut();
-        HAL_GPIO_WritePin(PYD_DIRECT_LINK_PORT, PYD_DIRECT_LINK_PIN, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(PYD_DIRECT_LINK_PORT, PYD_DIRECT_LINK_PIN, GPIO_PIN_SET);
 
         __HAL_TIM_CLEAR_IT(&pyro_tim, TIM_IT_UPDATE);
         HAL_StatusTypeDef status = HAL_TIM_Base_Start_IT(&pyro_tim);
@@ -298,10 +298,10 @@ static int Pyro_TimerInit(void)
     int retval = 0;
     HAL_StatusTypeDef status = HAL_ERROR;
 
-    pyro_tim.Instance = PYRO_HW_TIMER;
-    pyro_tim.Init.Prescaler = PYRO_PRESCALER;
+    pyro_tim.Instance = PYD_HW_TIMER;
+    pyro_tim.Init.Prescaler = PYD_PRESCALER;
     pyro_tim.Init.CounterMode = TIM_COUNTERMODE_UP;
-    pyro_tim.Init.Period = PYRO_TX_PERIOD_NORMAL;
+    pyro_tim.Init.Period = PYD_TX_PERIOD_NORMAL;
     pyro_tim.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
 
     status = HAL_TIM_Base_Init(&pyro_tim);
@@ -363,7 +363,7 @@ static inline __attribute__((always_inline)) void Pyro_TransactionFSM(void)
     case E_TX_STATE_WR_BIT:
         if (transaction_ctl.bit_pos < 0) {
             /* update autoreload reg for end sequence */
-            pyro_tim.Instance->ARR = PYRO_TX_PERIOD_ENDSEQ;
+            pyro_tim.Instance->ARR = PYD_TX_PERIOD_ENDSEQ;
             /* set serial in pin to low */
             PYD_SERIAL_IN_PORT->BRR = PYD_SERIAL_IN_PIN;
             /* all bits are sent - start end sequence */
@@ -385,7 +385,7 @@ static inline __attribute__((always_inline)) void Pyro_TransactionFSM(void)
     case E_RX_STATE_START_SEQ:
         transaction_ctl.rx_frame = 0;
         /* update autoreload reg for rx start sequence */
-        pyro_tim.Instance->ARR = PYRO_RX_PERIOD_RD_BIT;
+        pyro_tim.Instance->ARR = PYD_RX_PERIOD_RD_BIT;
         Pyro_ReadBitSeq();
         transaction_ctl.state = E_RX_STATE_RD_BIT;
         break;
@@ -393,7 +393,7 @@ static inline __attribute__((always_inline)) void Pyro_TransactionFSM(void)
     case E_RX_STATE_RD_BIT:
         if (transaction_ctl.bit_pos < 0) {
             /* transaction is finished; update autoreload reg for rx end sequence */
-            pyro_tim.Instance->ARR = PYRO_RX_PERIOD_ENDSEQ;
+            pyro_tim.Instance->ARR = PYD_RX_PERIOD_ENDSEQ;
             Pyro_SetDlPinOut();
             /* reset DirectLink pin */
             PYD_DIRECT_LINK_PORT->BRR = PYD_DIRECT_LINK_PIN;
