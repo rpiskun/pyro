@@ -18,6 +18,7 @@
 #define PYD_HW_TIMER           TIM6
 
 #define PYD_CONFIG_BITS_NUM     (25u)
+#define PYD_CONFIG_BIT_TO_SEND  (0x1000000u)
 
 // #define PYD_PRESCALER  (320u)
 #define PYD_PRESCALER  (32u)
@@ -302,7 +303,7 @@ static int Pyro_TimerInit(void)
     pyro_tim.Init.Prescaler = PYD_PRESCALER;
     pyro_tim.Init.CounterMode = TIM_COUNTERMODE_UP;
     pyro_tim.Init.Period = PYD_TX_PERIOD_NORMAL;
-    pyro_tim.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+    pyro_tim.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
 
     status = HAL_TIM_Base_Init(&pyro_tim);
 
@@ -370,14 +371,19 @@ static inline __attribute__((always_inline)) void Pyro_TransactionFSM(void)
             transaction_ctl.state = E_TX_STATE_END_SEQ;
         } else {
             transaction_ctl.bit_pos--;
-            uint32_t bit_state = (transaction_ctl.tx_frame & ((uint32_t)1 << transaction_ctl.bit_pos));
+            // uint32_t bit_state = (transaction_ctl.tx_frame & ((uint32_t)1 << transaction_ctl.bit_pos));
+            uint32_t bit_state = (transaction_ctl.tx_frame & PYD_CONFIG_BIT_TO_SEND);
             uint32_t tx_pin_state = (bit_state) ? PYD_SERIAL_IN_PIN_HIGH: PYD_SERIAL_IN_PIN_LOW;
-
             Pyro_UpdateSiPin(tx_pin_state);
+            transaction_ctl.tx_frame <<= 1;
         }
         break;
 
     case E_TX_STATE_END_SEQ:
+        /* reset DirectLink pin */
+        PYD_DIRECT_LINK_PORT->BRR = PYD_DIRECT_LINK_PIN;
+        /* transaction is complete - release DirectLink pin (put it to Hi-Z) */
+        Pyro_SetDlPinIn();
         transaction_ctl.state = E_STATE_IDLE;
         (void)HAL_TIM_Base_Stop_IT(&pyro_tim);
         break;
@@ -410,6 +416,8 @@ static inline __attribute__((always_inline)) void Pyro_TransactionFSM(void)
         break;
 
     case E_RX_STATE_END_SEQ:
+        /* reset DirectLink pin */
+        PYD_DIRECT_LINK_PORT->BRR = PYD_DIRECT_LINK_PIN;
         /* transaction is complete - release DirectLink pin (put it to Hi-Z) */
         Pyro_SetDlPinIn();
         transaction_ctl.state = E_STATE_IDLE;
