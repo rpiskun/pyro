@@ -1,5 +1,6 @@
 #include "stm32l0xx_hal.h"
 #include "stm32l0xx_it.h"
+#include "pyd1588.h"
 /******************************************************************************/
 /*           Cortex-M0+ Processor Interruption and Exception Handlers          */
 /******************************************************************************/
@@ -45,3 +46,10 @@ void SysTick_Handler(void)
     HAL_IncTick();
 }
 
+/**
+  * @brief  This function handles external lines 0 to 1 interrupt request.
+  */
+void EXTI0_1_IRQHandler(void)
+{
+    HAL_GPIO_EXTI_IRQHandler(PYD_DIRECT_LINK_PIN);
+}

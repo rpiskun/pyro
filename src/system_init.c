@@ -151,10 +151,6 @@ int clock_init_max(void)
     RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
 
     do {
-        /** Configure the main internal regulator output voltage
-        */
-        __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
-
         /** Configure LSE Drive Capability
         */
         HAL_PWR_EnableBkUpAccess();
@@ -179,8 +175,7 @@ int clock_init_max(void)
 
         /** Initializes the CPU, AHB and APB buses clocks
         */
-        RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-            |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+        RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
         RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
         RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
         RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
@@ -191,6 +186,13 @@ int clock_init_max(void)
             retval = -1;
             break;
         }
+
+        /* Enable Power Control clock */
+        __HAL_RCC_PWR_CLK_ENABLE();
+        /** Configure the main internal regulator output voltage
+        */
+        __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+
         PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_RTC;
         PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
         if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
@@ -199,6 +201,24 @@ int clock_init_max(void)
             break;
         }
     } while (0);
+
+    return retval;
+}
+
+int power_init(void)
+{
+    int retval = 0;
+    /* Enable Power Control clock */
+    __HAL_RCC_PWR_CLK_ENABLE();
+
+    /* Enable Ultra low power mode */
+    HAL_PWREx_EnableUltraLowPower();
+
+    /* Enable the fast wake up from Ultra low power mode */
+    HAL_PWREx_EnableFastWakeUp();
+
+    /* Select HSI as system clock source after Wake Up from Stop mode */
+    __HAL_RCC_WAKEUPSTOP_CLK_CONFIG(RCC_STOP_WAKEUPCLOCK_HSI);
 
     return retval;
 }

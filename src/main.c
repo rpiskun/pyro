@@ -1,21 +1,26 @@
 #include <stdbool.h>
 #include "system_init.h"
 #include "rtc.h"
+#include "pyd1588.h"
 #include "pyro_fsm.h"
 #include "main.h"
 
 static void error_handler(void);
 static int system_init(void);
+static int wakeup_init(void);
+static void enter_stop_mode(void);
 
 int main(void)
 {
     int status = 0;
+    bool conf_updated = false;
+    bool irq_enabled = false;
     union Pyd1588Config pyro_conf = {
-        .fields.threshold = 200u,
+        .fields.threshold = 50,
         .fields.blind_time = 3u,
         .fields.pulse_counter = 2u,
         .fields.window_time = 1u,
-        .fields.operating_modes = PYD1588_OPERATION_MODE_FORCED_READOUT,
+        .fields.operating_modes = PYD1588_OPERATION_MODE_WAKEUP,
         .fields.signal_source = PYD1588_SIGNAL_SOURCE_BPF,
         .fields.reserved2 = PYD1588_RESERVED2,
         .fields.hpf_cutoff = PYD1588_HPF_CUTOFF_0_4HZ,
@@ -34,15 +39,23 @@ int main(void)
     }
 
     Pyro_UpdateConf(pyro_conf);
-    (void)Pyro_StartAdcRead();
+    // (void)Pyro_StartAdcRead();
 
     while(1) {
         Pyro_Fsm();
+
+        conf_updated = Pyro_IsConfUpdated();
+        if (!irq_enabled && conf_updated) {
+            PYD_EnableWakeupEvent();
+            enter_stop_mode();
+            wakeup_init();
+            irq_enabled = true;
+        }
     }
     return 0;
 }
 
-int system_init(void)
+static int system_init(void)
 {
     int status = 0;
 
@@ -55,6 +68,12 @@ int system_init(void)
         if (status < 0) {
             break;
         }
+
+        status = power_init();
+        if (status < 0) {
+            break;
+        }
+
 
         status = gpio_init();
         if (status < 0) {
@@ -70,6 +89,23 @@ int system_init(void)
     return status;
 }
 
+static int wakeup_init(void)
+{
+    int status = 0;
+
+    do {
+        status = clock_init_max();
+        if (status < 0) {
+            break;
+        }
+        /* resume systick timer */
+        HAL_ResumeTick();
+    } while (0);
+
+    return status;
+}
+
+
 static void error_handler(void)
 {
     __disable_irq();
@@ -79,3 +115,10 @@ static void error_handler(void)
     }
 }
 
+static void enter_stop_mode(void)
+{
+    /* suspend systick timer */
+    HAL_SuspendTick();
+    HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFE);
+    // HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
+}

@@ -7,5 +7,6 @@ int clock_init_msi(void);
 int clock_init_hsi(void);
 int clock_init_max(void);
 int gpio_init(void);
+int power_init(void);
 
 #endif /* SYSTEM_INIT_H */
