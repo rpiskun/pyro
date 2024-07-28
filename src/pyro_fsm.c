@@ -1,11 +1,12 @@
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 #include "pyro_fsm.h"
 
 #define PYRO_CONF_APPLY_DELAY   (3u)
 #define PYRO_READY_TIMEOUT      (6u)
-#define PYRO_READ_RETRIES       (3u)
-#define PYRO_CONF_CHECK_RETRIES (3u)
+#define PYRO_READ_RETRIES       (2u)
+#define PYRO_CONF_CHECK_RETRIES (2u)
 #define PYRO_ADC_READ_DELAY     (75u)
 
 enum Pyro_ConfUpdateState {
@@ -47,7 +48,7 @@ struct TxConfig {
 
 struct RxConfig {
     union Pyd1588Config conf;
-    bool is_ready;
+    bool is_updated;
 };
 
 struct AdcData {
@@ -82,7 +83,7 @@ static inline __attribute__((always_inline)) enum Pyro_ReadyState IsSensorReady(
     enum Pyro_ReadyState retval = E_PYRO_READY_STATE_PENDING;
     bool pyro_ready = false;
 
-    pyro_ready = Pyro_IsReady();
+    pyro_ready = PYD_IsReady();
     if (pyro_ready) {
         retval = E_PYRO_READY_STATE_OK;
     } else {
@@ -121,8 +122,7 @@ static void Pyro_ConfUpdateFsm(void)
 
     case E_PYRO_CONF_UPD_WRITE:
         /* force write */
-        Pyro_WriteAsync(tx_conf.conf.word);
-        rx_conf.is_ready = false;
+        PYD_WriteAsync(tx_conf.conf.word);
         conf_check_cnt = 0;
         /* store start time */
         first_tick = HAL_GetTick();
@@ -148,7 +148,7 @@ static void Pyro_ConfUpdateFsm(void)
         break;
 
     case E_PYRO_CONF_UPD_READ:
-        Pyro_ReadAsync(E_RX_FRAME_FULL);
+        PYD_ReadAsync(E_RX_FRAME_FULL);
         /* store start time */
         first_tick = HAL_GetTick();
         pyro_conf_update_state = E_PYRO_CONF_UPD_WAIT_FOR_CHECK;
@@ -171,11 +171,11 @@ static void Pyro_ConfUpdateFsm(void)
         break;
 
     case E_PYRO_CONF_UPD_CHECK:
-        (void)Pyro_GetRxData(&rx_data);
+        (void)PYD_GetRxData(&rx_data);
         if (rx_data.conf.word == tx_conf.conf.word) {
             /* update cached rx conf */
             rx_conf.conf.word = rx_data.conf.word;
-            rx_conf.is_ready = true;
+            rx_conf.is_updated = true;
             pyro_conf_update_state = E_PYRO_CONF_UPD_READY;
         } else {
             if (conf_check_cnt < PYRO_CONF_CHECK_RETRIES) {
@@ -217,7 +217,7 @@ static void Pyro_AdcReadFsm(void)
         break;
 
     case E_PYRO_ADC_READ_REQUEST:
-        Pyro_ReadAsync(E_RX_FRAME_ADC);
+        PYD_ReadAsync(E_RX_FRAME_ADC);
         /* store start time */
         first_tick = HAL_GetTick();
         pyro_adc_state = E_PYRO_ADC_READ_WAIT_DATA;
@@ -227,7 +227,7 @@ static void Pyro_AdcReadFsm(void)
         pyro_ready = IsSensorReady(first_tick, PYRO_READY_TIMEOUT);
         if (pyro_ready == E_PYRO_READY_STATE_OK) {
             struct Pyd1588RxData rx_data = { 0 };
-            int status = Pyro_GetRxData(&rx_data);
+            int status = PYD_GetRxData(&rx_data);
             if (status == 0) {
                 if (rx_data.out_of_range) {
                     adc_data.adc_val = rx_data.adc_val;
@@ -252,6 +252,23 @@ static void Pyro_AdcReadFsm(void)
     default:
         break;
     }
+}
+
+int Pyro_Init(void)
+{
+    int retval = 0;
+
+    PYD_Init();
+
+    pyro_conf_update_state = E_PYRO_CONF_UPD_INIT;
+    pyro_basic_state = E_PYRO_BASIC_IDLE;
+    pyro_adc_state = E_PYRO_ADC_READ_INIT;
+
+    memset(&tx_conf, 0, sizeof(struct TxConfig));
+    memset(&rx_conf, 0, sizeof(struct RxConfig));
+    memset(&adc_data , 0, sizeof(struct AdcData));
+
+    return retval;
 }
 
 void Pyro_Fsm(void)
@@ -297,6 +314,7 @@ int Pyro_UpdateConf(union Pyd1588Config pyro_conf)
 
     tx_conf.conf.word = pyro_conf.word;
     tx_conf.update_requested = true;
+    rx_conf.is_updated = false;
 
     return retval;
 }
@@ -327,5 +345,5 @@ int16_t Pyro_GetAdcValue(void)
 
 bool Pyro_IsConfUpdated(void)
 {
-    return rx_conf.is_ready;
+    return rx_conf.is_updated;
 }
