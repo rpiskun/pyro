@@ -1,12 +1,10 @@
 #include <stdint.h>
+#include "stm32l0xx_hal_exti.h"
+#include "stm32l0xx_hal_pwr.h"
 #include "pyd1588.h"
 
-#define PYD_SERIAL_IN_PORT      GPIOC
-#define PYD_SERIAL_IN_PIN       GPIO_PIN_2
 #define PYD_SERIAL_IN_PIN_LOW   GPIO_PIN_2
 #define PYD_SERIAL_IN_PIN_HIGH  (0u)
-#define PYD_DIRECT_LINK_PORT    GPIOC
-#define PYD_DIRECT_LINK_PIN     GPIO_PIN_0
 
 #define PYD_DL_PIN_MODE_IN      (0x00000000u)
 #define PYD_DL_PIN_MODE_OUT     (0x00000001u)
@@ -14,10 +12,14 @@
 #define PYD_DL_PIN_PUPD_SET     (0x00000001u)
 #define PYD_DL_PIN_PUPD_CLR     (0xFFFFFFFCu);
 #define PYD_DL_PIN_IDR          (0x00000001u)
+#define PYD_DL_EXTI_EN          (0x00000002u)
+#define PYD_DL_RISING_EVT       (0x00000001u)
+#define PYD_DL_EVT_EN           (0x00000001u)
 
 #define PYD_HW_TIMER           TIM6
 
 #define PYD_CONFIG_BITS_NUM     (25u)
+#define PYD_CONFIG_WR_BIT_POS   (PYD_CONFIG_BITS_NUM - 1)
 #define PYD_CONFIG_BIT_TO_SEND  (0x1000000u)
 
 // #define PYD_PRESCALER  (320u)
@@ -51,6 +53,12 @@
 #define PYD_RX_CONFIG_MASK          (0x1FFFFFFu)
 #define PYD_RX_OOR_MASK_FULL_FRAME   ((uint64_t)1 << 39u)
 #define PYD_RX_OOR_MASK_ADC_FRAME    ((uint64_t)1 << 14u)
+
+#define PYD_WAKEUP_REASON_IRQ       (1u)
+#define PYD_WAKEUP_REASON_EVENT     (2u)
+
+// #define PYD_WAKEUP_REASON           PYD_WAKEUP_REASON_IRQ
+#define PYD_WAKEUP_REASON           PYD_WAKEUP_REASON_EVENT
 
 #define ASM_NOP_DELAY    \
     asm volatile("nop"); \
@@ -95,27 +103,27 @@ static volatile struct PyroTransactionCtl transaction_ctl = {
     .frame_type = E_RX_FRAME_UNKNOWN
 };
 
-static int Pyro_GpioInit(void);
-static int Pyro_TimerInit(void);
-static inline void Pyro_UpdateSiPin(uint32_t pin_state);
-static inline void Pyro_ReadBitSeq(void);
-static inline void Pyro_TransactionFSM(void);
-static inline void Pyro_SetDlPinOut(void);
-static inline void Pyro_SetDlPinIn(void);
-static int32_t Pyro_GetRxBitsNum(enum PyroRxFrameType frame_type);
-static uint16_t Pyro_GetAdcRawData(uint64_t rx_frame, enum PyroRxFrameType frame_type);
-static uint8_t Pyro_GetOutOfRangeBit(uint64_t rx_frame, enum PyroRxFrameType frame_type);
+static int PYD_GpioInit(void);
+static int PYD_TimerInit(void);
+static inline void PYD_UpdateSiPin(uint32_t pin_state);
+static inline void PYD_ReadBitSeq(void);
+static inline void PYD_TransactionFSM(void);
+static inline void PYD_SetDlPinOut(void);
+static inline void PYD_SetDlPinIn(void);
+static int32_t PYD_GetRxBitsNum(enum PyroRxFrameType frame_type);
+static uint16_t PYD_GetAdcRawData(uint64_t rx_frame, enum PyroRxFrameType frame_type);
+static uint8_t PYD_GetOutOfRangeBit(uint64_t rx_frame, enum PyroRxFrameType frame_type);
 
-int Pyro_Init(void)
+int PYD_Init(void)
 {
     int retval = 0;
     do {
-        retval = Pyro_GpioInit();
+        retval = PYD_GpioInit();
         if (retval < 0) {
             break;
         }
 
-        retval = Pyro_TimerInit();
+        retval = PYD_TimerInit();
         if (retval < 0) {
             break;
         }
@@ -154,15 +162,15 @@ void TIM6_DAC_IRQHandler(void)
     /* the only UPDATE interrup is enabled for TIM6 so no need
      * to check other interrup sources */ 
     __HAL_TIM_CLEAR_IT(&pyro_tim, TIM_IT_UPDATE);
-    Pyro_TransactionFSM();
+    PYD_TransactionFSM();
 }
 
-bool Pyro_IsReady(void)
+bool PYD_IsReady(void)
 {
     return (transaction_ctl.state == E_STATE_IDLE);
 }
 
-int Pyro_WriteAsync(uint32_t data)
+int PYD_WriteAsync(uint32_t data)
 {
     int retval = 0;
 
@@ -173,12 +181,12 @@ int Pyro_WriteAsync(uint32_t data)
         transaction_ctl.state = E_STATE_IDLE;
 
         transaction_ctl.tx_frame = data;
-        transaction_ctl.bit_pos = PYD_CONFIG_BITS_NUM;
+        transaction_ctl.bit_pos = PYD_CONFIG_WR_BIT_POS;
         
         /* during config update DirectLink should be low */
         /* set BRR first to prevent rising edge after switch pin from in to out */
         PYD_DIRECT_LINK_PORT->BRR = PYD_DIRECT_LINK_PIN;
-        Pyro_SetDlPinOut();
+        PYD_SetDlPinOut();
 
         /* update autoreload reg before start */
         pyro_tim.Instance->ARR = PYD_TX_PERIOD_NORMAL;
@@ -199,7 +207,7 @@ int Pyro_WriteAsync(uint32_t data)
     return retval;
 }
 
-int Pyro_ReadAsync(enum PyroRxFrameType frame_type)
+int PYD_ReadAsync(enum PyroRxFrameType frame_type)
 {
     int retval = -1;
 
@@ -209,7 +217,7 @@ int Pyro_ReadAsync(enum PyroRxFrameType frame_type)
         (void)HAL_TIM_Base_Stop_IT(&pyro_tim);
         transaction_ctl.state = E_STATE_IDLE;
 
-        int32_t rx_bits = Pyro_GetRxBitsNum(frame_type);
+        int32_t rx_bits = PYD_GetRxBitsNum(frame_type);
         if (rx_bits <= 0) {
             break;
         }
@@ -220,8 +228,9 @@ int Pyro_ReadAsync(enum PyroRxFrameType frame_type)
         pyro_tim.Instance->ARR = PYD_RX_PERIOD_START_SEQ;
         /* update prescaler reg before start */
         pyro_tim.Instance->PSC = PYD_PRESCALER;
-        Pyro_SetDlPinOut();
-        HAL_GPIO_WritePin(PYD_DIRECT_LINK_PORT, PYD_DIRECT_LINK_PIN, GPIO_PIN_SET);
+        PYD_SetDlPinOut();
+        /* set DirectLink pin high */
+        PYD_DIRECT_LINK_PORT->BSRR = PYD_DIRECT_LINK_PIN;
 
         __HAL_TIM_CLEAR_IT(&pyro_tim, TIM_IT_UPDATE);
         HAL_StatusTypeDef status = HAL_TIM_Base_Start_IT(&pyro_tim);
@@ -237,7 +246,7 @@ int Pyro_ReadAsync(enum PyroRxFrameType frame_type)
     return retval;
 }
 
-int Pyro_GetRxData(struct Pyd1588RxData *data)
+int PYD_GetRxData(struct Pyd1588RxData *data)
 {
     int retval = 0;
 
@@ -251,7 +260,7 @@ int Pyro_GetRxData(struct Pyd1588RxData *data)
             retval = -1;
             break;
         }
-        uint16_t adc_raw = Pyro_GetAdcRawData(transaction_ctl.rx_frame, transaction_ctl.frame_type);
+        uint16_t adc_raw = PYD_GetAdcRawData(transaction_ctl.rx_frame, transaction_ctl.frame_type);
         /* check sign of adc value */
         int16_t signed_adc = 0;
         if (adc_raw & PYD_ADC_SIGN_BITMASK) {
@@ -264,16 +273,18 @@ int Pyro_GetRxData(struct Pyd1588RxData *data)
 
         data->adc_val = signed_adc;
         data->conf.word = transaction_ctl.rx_frame & PYD_RX_CONFIG_MASK;
-        data->out_of_range = Pyro_GetOutOfRangeBit(transaction_ctl.rx_frame, transaction_ctl.frame_type);
+        data->out_of_range = PYD_GetOutOfRangeBit(transaction_ctl.rx_frame, transaction_ctl.frame_type);
     } while (0);
 
     return retval;
 }
 
-static int Pyro_GpioInit(void)
+static int PYD_GpioInit(void)
 {
     int retval = 0;
     GPIO_InitTypeDef GPIO_InitStruct = {0};
+    __HAL_RCC_SYSCFG_CLK_ENABLE();
+    HAL_NVIC_DisableIRQ(EXTI0_1_IRQn);
     /* GPIO Ports Clock Enable */
     __HAL_RCC_GPIOC_CLK_ENABLE();
 
@@ -294,7 +305,7 @@ static int Pyro_GpioInit(void)
     return retval;
 }
 
-static int Pyro_TimerInit(void)
+static int PYD_TimerInit(void)
 {
     int retval = 0;
     HAL_StatusTypeDef status = HAL_ERROR;
@@ -315,7 +326,7 @@ static int Pyro_TimerInit(void)
     return retval;
 }
 
-static inline __attribute__((always_inline)) void Pyro_UpdateSiPin(uint32_t pin_state)
+static inline __attribute__((always_inline)) void PYD_UpdateSiPin(uint32_t pin_state)
 {
     /* bit start condition: SerialIn low -> high */
     /* set SrialIn pin to low */
@@ -332,21 +343,21 @@ static inline __attribute__((always_inline)) void Pyro_UpdateSiPin(uint32_t pin_
     PYD_SERIAL_IN_PORT->BRR = pin_state;
 }
 
-static inline __attribute__((always_inline)) void Pyro_SetDlPinOut(void)
+static inline __attribute__((always_inline)) void PYD_SetDlPinOut(void)
 {
     PYD_DIRECT_LINK_PORT->MODER |= PYD_DL_PIN_MODE_OUT;
 }
 
-static inline __attribute__((always_inline)) void Pyro_SetDlPinIn(void)
+static inline __attribute__((always_inline)) void PYD_SetDlPinIn(void)
 {
     PYD_DIRECT_LINK_PORT->MODER &= PYD_DL_PIN_MODE_CLR;
 }
 
-static inline __attribute__((always_inline)) void Pyro_ReadBitSeq(void)
+static inline __attribute__((always_inline)) void PYD_ReadBitSeq(void)
 {
     /* set BRR first to prevent rising edge after switch pin from in to out */
     PYD_DIRECT_LINK_PORT->BRR = PYD_DIRECT_LINK_PIN;
-    Pyro_SetDlPinOut();
+    PYD_SetDlPinOut();
     /* keep pin state for approx 300 ns */
     ASM_NOP_DELAY;
 
@@ -355,10 +366,10 @@ static inline __attribute__((always_inline)) void Pyro_ReadBitSeq(void)
     /* don't use delay to keep in high state since additional instuctions has to be executed
      * to switch pin from input to output - update MODER register */
 
-    Pyro_SetDlPinIn();
+    PYD_SetDlPinIn();
 }
 
-static inline __attribute__((always_inline)) void Pyro_TransactionFSM(void)
+static inline __attribute__((always_inline)) void PYD_TransactionFSM(void)
 {
     switch (transaction_ctl.state) {
     case E_TX_STATE_WR_BIT:
@@ -374,7 +385,7 @@ static inline __attribute__((always_inline)) void Pyro_TransactionFSM(void)
             // uint32_t bit_state = (transaction_ctl.tx_frame & ((uint32_t)1 << transaction_ctl.bit_pos));
             uint32_t bit_state = (transaction_ctl.tx_frame & PYD_CONFIG_BIT_TO_SEND);
             uint32_t tx_pin_state = (bit_state) ? PYD_SERIAL_IN_PIN_HIGH: PYD_SERIAL_IN_PIN_LOW;
-            Pyro_UpdateSiPin(tx_pin_state);
+            PYD_UpdateSiPin(tx_pin_state);
             transaction_ctl.tx_frame <<= 1;
         }
         break;
@@ -383,7 +394,7 @@ static inline __attribute__((always_inline)) void Pyro_TransactionFSM(void)
         /* reset DirectLink pin */
         PYD_DIRECT_LINK_PORT->BRR = PYD_DIRECT_LINK_PIN;
         /* transaction is complete - release DirectLink pin (put it to Hi-Z) */
-        Pyro_SetDlPinIn();
+        PYD_SetDlPinIn();
         transaction_ctl.state = E_STATE_IDLE;
         (void)HAL_TIM_Base_Stop_IT(&pyro_tim);
         break;
@@ -392,7 +403,7 @@ static inline __attribute__((always_inline)) void Pyro_TransactionFSM(void)
         transaction_ctl.rx_frame = 0;
         /* update autoreload reg for rx start sequence */
         pyro_tim.Instance->ARR = PYD_RX_PERIOD_RD_BIT;
-        Pyro_ReadBitSeq();
+        PYD_ReadBitSeq();
         transaction_ctl.state = E_RX_STATE_RD_BIT;
         break;
 
@@ -400,7 +411,7 @@ static inline __attribute__((always_inline)) void Pyro_TransactionFSM(void)
         if (transaction_ctl.bit_pos < 0) {
             /* transaction is finished; update autoreload reg for rx end sequence */
             pyro_tim.Instance->ARR = PYD_RX_PERIOD_ENDSEQ;
-            Pyro_SetDlPinOut();
+            PYD_SetDlPinOut();
             /* reset DirectLink pin */
             PYD_DIRECT_LINK_PORT->BRR = PYD_DIRECT_LINK_PIN;
             transaction_ctl.state = E_RX_STATE_END_SEQ;
@@ -411,7 +422,7 @@ static inline __attribute__((always_inline)) void Pyro_TransactionFSM(void)
                 transaction_ctl.rx_frame |= ((uint64_t)1 << transaction_ctl.bit_pos);
             }
             transaction_ctl.bit_pos--;
-            Pyro_ReadBitSeq();
+            PYD_ReadBitSeq();
         }
         break;
 
@@ -419,7 +430,7 @@ static inline __attribute__((always_inline)) void Pyro_TransactionFSM(void)
         /* reset DirectLink pin */
         PYD_DIRECT_LINK_PORT->BRR = PYD_DIRECT_LINK_PIN;
         /* transaction is complete - release DirectLink pin (put it to Hi-Z) */
-        Pyro_SetDlPinIn();
+        PYD_SetDlPinIn();
         transaction_ctl.state = E_STATE_IDLE;
         (void)HAL_TIM_Base_Stop_IT(&pyro_tim);
         break;
@@ -429,7 +440,7 @@ static inline __attribute__((always_inline)) void Pyro_TransactionFSM(void)
     }
 }
 
-static int32_t Pyro_GetRxBitsNum(enum PyroRxFrameType frame_type)
+static int32_t PYD_GetRxBitsNum(enum PyroRxFrameType frame_type)
 {
     int32_t retval = 0;
 
@@ -449,7 +460,7 @@ static int32_t Pyro_GetRxBitsNum(enum PyroRxFrameType frame_type)
     return retval;
 }
 
-static uint16_t Pyro_GetAdcRawData(uint64_t rx_frame, enum PyroRxFrameType frame_type)
+static uint16_t PYD_GetAdcRawData(uint64_t rx_frame, enum PyroRxFrameType frame_type)
 {
     uint16_t retval = 0;
 
@@ -464,7 +475,7 @@ static uint16_t Pyro_GetAdcRawData(uint64_t rx_frame, enum PyroRxFrameType frame
     return retval;
 }
 
-static uint8_t Pyro_GetOutOfRangeBit(uint64_t rx_frame, enum PyroRxFrameType frame_type)
+static uint8_t PYD_GetOutOfRangeBit(uint64_t rx_frame, enum PyroRxFrameType frame_type)
 {
     uint8_t retval = 0;
     uint64_t bitmask = PYD_RX_OOR_MASK_ADC_FRAME;
@@ -479,3 +490,60 @@ static uint8_t Pyro_GetOutOfRangeBit(uint64_t rx_frame, enum PyroRxFrameType fra
 
     return retval;
 }
+
+int PYD_EnableWakeupEvent(void)
+{
+    int retval = 0;
+
+    PYD_SetDlPinIn();
+    __HAL_RCC_SYSCFG_CLK_ENABLE();
+    SYSCFG->EXTICR[0] = PYD_DL_EXTI_EN;
+    /* enable rising edge detection */
+    EXTI->RTSR = PYD_DL_RISING_EVT;
+    /* disable falling edge detection */
+    EXTI->FTSR = 0;
+#if PYD_WAKEUP_REASON == PYD_WAKEUP_REASON_IRQ
+    /* disable external event generation */
+    EXTI->EMR = 0;
+    /* enable external interrupt generation */
+    EXTI->IMR = PYD_DL_EVT_EN;
+#elif PYD_WAKEUP_REASON == PYD_WAKEUP_REASON_EVENT
+    /* disable external interrupt generation */
+    EXTI->IMR = 0;
+    /* enable external event generation */
+    EXTI->EMR = PYD_DL_EVT_EN;
+#else
+#error "PYD_WAKEUP_REASON is not defined "
+#endif /* PYD_WAKEUP_REASON */
+
+    /* EXTI interrupt init */
+    HAL_NVIC_SetPriority(EXTI0_1_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(EXTI0_1_IRQn);
+
+    return retval;
+}
+
+int PYD_DisableWakeupEvent(void)
+{
+    int retval = 0;
+
+    PYD_SetDlPinIn();
+    __HAL_RCC_SYSCFG_CLK_DISABLE();
+    SYSCFG->EXTICR[0] = 0;
+    /* disable EXTI interrupt */
+    HAL_NVIC_DisableIRQ(EXTI0_1_IRQn);
+
+    return retval;
+}
+
+volatile int DEBUG_isr_cnt = 0;
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    /* Clear Wake Up Flag */
+    __HAL_PWR_CLEAR_FLAG(PWR_FLAG_WU);
+
+    if (GPIO_Pin == PYD_DIRECT_LINK_PIN) {
+        DEBUG_isr_cnt++;
+    }
+}
+

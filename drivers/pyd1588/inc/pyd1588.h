@@ -29,6 +29,11 @@
 #define PYD1588_RESERVED1   (0u)
 #define PYD1588_RESERVED2   (2u)
 
+#define PYD_SERIAL_IN_PORT      GPIOC
+#define PYD_SERIAL_IN_PIN       GPIO_PIN_2
+#define PYD_DIRECT_LINK_PORT    GPIOC
+#define PYD_DIRECT_LINK_PIN     GPIO_PIN_0
+
 enum PyroRxFrameType {
     E_RX_FRAME_UNKNOWN = 0,
     E_RX_FRAME_FULL,
@@ -59,10 +64,12 @@ struct Pyd1588RxData {
 
 extern const union Pyd1588Config Pyd1588DefaultConfig;
 
-int Pyro_Init(void);
-bool Pyro_IsReady(void);
-int Pyro_WriteAsync(uint32_t data);
-int Pyro_ReadAsync(enum PyroRxFrameType frame_type);
-int Pyro_GetRxData(struct Pyd1588RxData *data);
+int PYD_Init(void);
+bool PYD_IsReady(void);
+int PYD_WriteAsync(uint32_t data);
+int PYD_ReadAsync(enum PyroRxFrameType frame_type);
+int PYD_GetRxData(struct Pyd1588RxData *data);
+int PYD_EnableWakeupEvent(void);
+int PYD_DisableWakeupEvent(void);
 
 #endif /* PYD1588_H */
