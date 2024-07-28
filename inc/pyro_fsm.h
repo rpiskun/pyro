@@ -10,6 +10,6 @@ bool Pyro_IsConfUpdated(void);
 void Pyro_Fsm(void);
 int Pyro_StartAdcRead(void);
 int Pyro_StopAdcRead(void);
-int16_t Pyro_GetAdcValue(void);
+bool Pyro_GetAdcValue(int16_t *adc_val);
 
 #endif /* PYRO_FSM_H */

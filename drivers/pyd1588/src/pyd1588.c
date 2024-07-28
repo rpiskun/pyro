@@ -31,12 +31,14 @@
 #define PYD_RX_PERIOD_START_SEQ        (12u)
 #define PYD_RX_PERIOD_RD_BIT           (1u)
 #define PYD_RX_PERIOD_ENDSEQ           (130u)
+#define PYD_RX_PERIOD_RESET_IRQ        (17u)
 #elif (PYD_PRESCALER == 32)
 #define PYD_TX_PERIOD_NORMAL           (95u)
 #define PYD_TX_PERIOD_ENDSEQ           (670u)
 #define PYD_RX_PERIOD_START_SEQ        (120u)
 #define PYD_RX_PERIOD_RD_BIT           (12u)
 #define PYD_RX_PERIOD_ENDSEQ           (1260u)
+#define PYD_RX_PERIOD_RESET_IRQ        (170u)
 #else
 #error  "PYD_PRESCALER value is not supported"
 #endif
@@ -83,7 +85,8 @@ enum PyroTransactionState {
     E_TX_STATE_END_SEQ,
     E_RX_STATE_START_SEQ,
     E_RX_STATE_RD_BIT,
-    E_RX_STATE_END_SEQ
+    E_RX_STATE_END_SEQ,
+    E_RX_STATE_RESET_IRQ
 };
 
 struct PyroTransactionCtl {
@@ -279,6 +282,38 @@ int PYD_GetRxData(struct Pyd1588RxData *data)
     return retval;
 }
 
+int PYD_HandleIrq(void)
+{
+    int retval = -1;
+
+    do {
+        /* force reset FSM to idle state to prevent deadlock
+         * caller should check if pyro driver is ready to request new read */
+        (void)HAL_TIM_Base_Stop_IT(&pyro_tim);
+        transaction_ctl.state = E_STATE_IDLE;
+
+        /* update autoreload reg before start */
+        pyro_tim.Instance->ARR = PYD_RX_PERIOD_RESET_IRQ;
+        /* update prescaler reg before start */
+        pyro_tim.Instance->PSC = PYD_PRESCALER;
+        /* set BRR first to prevent rising edge after switch pin from in to out */
+        PYD_DIRECT_LINK_PORT->BRR = PYD_DIRECT_LINK_PIN;
+        PYD_SetDlPinOut();
+
+        __HAL_TIM_CLEAR_IT(&pyro_tim, TIM_IT_UPDATE);
+        HAL_StatusTypeDef status = HAL_TIM_Base_Start_IT(&pyro_tim);
+        if (status != HAL_OK) {
+            transaction_ctl.state = E_STATE_IDLE;
+            retval = -1;
+            break;
+        }
+        transaction_ctl.state = E_RX_STATE_RESET_IRQ;
+        retval = 0;
+    } while(0);
+
+    return retval;
+}
+
 static int PYD_GpioInit(void)
 {
     int retval = 0;
@@ -435,6 +470,15 @@ static inline __attribute__((always_inline)) void PYD_TransactionFSM(void)
         (void)HAL_TIM_Base_Stop_IT(&pyro_tim);
         break;
 
+    case E_RX_STATE_RESET_IRQ:
+        /* reset DirectLink pin */
+        PYD_DIRECT_LINK_PORT->BRR = PYD_DIRECT_LINK_PIN;
+        /* irq is reset - release DirectLink pin (put it to Hi-Z) */
+        PYD_SetDlPinIn();
+        transaction_ctl.state = E_STATE_IDLE;
+        (void)HAL_TIM_Base_Stop_IT(&pyro_tim);
+        break;
+
     default:
         break;
     }
@@ -536,14 +580,13 @@ int PYD_DisableWakeupEvent(void)
     return retval;
 }
 
-volatile int DEBUG_isr_cnt = 0;
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     /* Clear Wake Up Flag */
     __HAL_PWR_CLEAR_FLAG(PWR_FLAG_WU);
 
     if (GPIO_Pin == PYD_DIRECT_LINK_PIN) {
-        DEBUG_isr_cnt++;
+        // TODO: add interrupt handling if needed
     }
 }
 

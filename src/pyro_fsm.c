@@ -9,6 +9,8 @@
 #define PYRO_CONF_CHECK_RETRIES (2u)
 #define PYRO_ADC_READ_DELAY     (75u)
 
+#define ADC_BUF_SIZE            (4u)
+
 enum Pyro_ConfUpdateState {
     E_PYRO_CONF_UPD_INIT = 0,
     E_PYRO_CONF_UPD_WAIT_FOR_WRITE,
@@ -52,7 +54,9 @@ struct RxConfig {
 };
 
 struct AdcData {
-    int16_t adc_val;
+    int16_t adc_buf[ADC_BUF_SIZE];
+    uint8_t head;
+    uint8_t tail;
     bool read_adc;
     bool read_requested;
 };
@@ -230,7 +234,17 @@ static void Pyro_AdcReadFsm(void)
             int status = PYD_GetRxData(&rx_data);
             if (status == 0) {
                 if (rx_data.out_of_range) {
-                    adc_data.adc_val = rx_data.adc_val;
+                    adc_data.adc_buf[adc_data.tail] = rx_data.adc_val;
+                    /* shift tail */
+                    if (++adc_data.tail >= ADC_BUF_SIZE) {
+                        adc_data.tail = 0;
+                    }
+                    /* override is allowed - just shift head */
+                    if (adc_data.head == adc_data.tail) {
+                        if (++adc_data.head >= ADC_BUF_SIZE) {
+                            adc_data.head = 0;
+                        }
+                    }
                 }
             }
             first_tick = HAL_GetTick();
@@ -314,14 +328,14 @@ int Pyro_UpdateConf(union Pyd1588Config pyro_conf)
 
     tx_conf.conf.word = pyro_conf.word;
     tx_conf.update_requested = true;
-    rx_conf.is_updated = false;
 
     return retval;
 }
 
 int Pyro_StartAdcRead(void)
 {
-    adc_data.adc_val = 0;
+    adc_data.head = 0;
+    adc_data.tail = 0;
     adc_data.read_adc = true;
     adc_data.read_requested = true;
 
@@ -330,17 +344,30 @@ int Pyro_StartAdcRead(void)
 
 int Pyro_StopAdcRead(void)
 {
-    adc_data.adc_val = 0;
     adc_data.read_adc = false;
     adc_data.read_requested = false;
 
     return 0;
 }
 
-int16_t Pyro_GetAdcValue(void)
+bool Pyro_GetAdcValue(int16_t *adc_val)
 {
-    /* returns the latest valid adc value */
-    return adc_data.adc_val;
+    bool retval = false;
+
+    if (adc_val) {
+        if (adc_data.head != adc_data.tail) {
+            *adc_val = adc_data.adc_buf[adc_data.head];
+
+            /* shift head */
+            if (++adc_data.head >= ADC_BUF_SIZE) {
+                adc_data.head = 0;
+            }
+
+            retval = true;
+        }
+    }
+
+    return retval;
 }
 
 bool Pyro_IsConfUpdated(void)

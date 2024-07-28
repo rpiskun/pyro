@@ -71,5 +71,6 @@ int PYD_ReadAsync(enum PyroRxFrameType frame_type);
 int PYD_GetRxData(struct Pyd1588RxData *data);
 int PYD_EnableWakeupEvent(void);
 int PYD_DisableWakeupEvent(void);
+int PYD_HandleIrq(void);
 
 #endif /* PYD1588_H */
