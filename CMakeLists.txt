@@ -22,6 +22,7 @@ set(LOCAL_HDRS
     "${CMAKE_CURRENT_SOURCE_DIR}/inc/system_conf.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/inc/main.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/inc/pyro_fsm.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/inc/uart.h"
 )
 
 set(LOCAL_SRCS
@@ -33,6 +34,7 @@ set(LOCAL_SRCS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/system_conf.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/pyro_fsm.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/uart.c"
 )
 
 add_executable(${PROJECT_NAME} ${LOCAL_SRCS} ${LOCAL_HDRS})

@@ -1,6 +1,7 @@
 #include "stm32l0xx_hal.h"
 #include "stm32l0xx_it.h"
 #include "pyd1588.h"
+#include "uart.h"
 /******************************************************************************/
 /*           Cortex-M0+ Processor Interruption and Exception Handlers          */
 /******************************************************************************/
@@ -53,3 +54,20 @@ void EXTI0_1_IRQHandler(void)
 {
     HAL_GPIO_EXTI_IRQHandler(PYD_DIRECT_LINK_PIN);
 }
+
+/**
+  * @brief  This function handles DMA interrupt request.
+  */
+void DMA1_Channel4_5_6_7_IRQHandler(void)
+{
+    HAL_DMA_IRQHandler(huart2.hdmatx);
+}
+
+/**
+  * @brief  This function handles USART1 interrupt request.
+  */
+void USART2_IRQHandler(void)
+{
+    HAL_UART_IRQHandler(&huart2);
+}
+
