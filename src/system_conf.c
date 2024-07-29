@@ -1,7 +1,7 @@
 #include "stm32l0xx_hal.h"
 #include "system_conf.h"
 
-int clock_init_msi(void)
+int Clock_InitMsi(void)
 {
     int retval = 0;
     RCC_OscInitTypeDef RCC_OscInitStruct = {0};
@@ -55,7 +55,7 @@ int clock_init_msi(void)
     return retval;
 }
 
-int clock_init_hsi(void)
+int Clock_InitHsi(void)
 {
     int retval = 0;
     RCC_OscInitTypeDef RCC_OscInitStruct = {0};
@@ -112,38 +112,7 @@ int clock_init_hsi(void)
     return retval;
 }
 
-int gpio_init(void)
-{
-    int retval = 0;
-    GPIO_InitTypeDef GPIO_InitStruct = {0};
-
-    /* GPIO Ports Clock Enable */
-    __HAL_RCC_GPIOC_CLK_ENABLE();
-
-    /* to reduce power consumption configure all unused pins as analog */
-    GPIO_InitStruct.Pin = GPIO_PIN_13|GPIO_PIN_1|GPIO_PIN_3|GPIO_PIN_4
-        |GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_8
-        |GPIO_PIN_9|GPIO_PIN_10|GPIO_PIN_11|GPIO_PIN_12;
-    GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-    GPIO_InitStruct.Pin = GPIO_PIN_0;
-    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-    GPIO_InitStruct.Pull = GPIO_PULLUP;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-    GPIO_InitStruct.Pin = GPIO_PIN_2;
-    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-    GPIO_InitStruct.Pull = GPIO_PULLUP;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-    return retval;
-}
-
-int clock_init_max(void)
+int Clock_InitHsiMax(void)
 {
     int retval = 0;
     RCC_OscInitTypeDef RCC_OscInitStruct = {0};
@@ -205,7 +174,38 @@ int clock_init_max(void)
     return retval;
 }
 
-int power_init(void)
+int Gpio_Init(void)
+{
+    int retval = 0;
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    /* GPIO Ports Clock Enable */
+    __HAL_RCC_GPIOC_CLK_ENABLE();
+
+    /* to reduce power consumption configure all unused pins as analog */
+    GPIO_InitStruct.Pin = GPIO_PIN_13|GPIO_PIN_1|GPIO_PIN_3|GPIO_PIN_4
+        |GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7|GPIO_PIN_8
+        |GPIO_PIN_9|GPIO_PIN_10|GPIO_PIN_11|GPIO_PIN_12;
+    GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = GPIO_PIN_0;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = GPIO_PIN_2;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+    return retval;
+}
+
+int Power_Init(void)
 {
     int retval = 0;
     /* Enable Power Control clock */
@@ -222,3 +222,4 @@ int power_init(void)
 
     return retval;
 }
+

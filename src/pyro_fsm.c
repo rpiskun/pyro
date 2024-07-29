@@ -72,12 +72,16 @@ static struct AdcData adc_data = { 0 };
 static void Pyro_ConfUpdateFsm(void);
 static void Pyro_AdcReadFsm(void);
 
-static inline __attribute__((always_inline)) uint32_t abs(int32_t v)
+static inline __attribute__((always_inline)) bool IsTimeElapsed(uint32_t first_tick, uint32_t timeout)
 {
-    uint32_t retval = 0;
-    int32_t const mask = v >> 31u;
+    bool retval = false;
 
-    retval = (v + mask) ^ mask;
+    uint32_t last_tick = HAL_GetTick();
+    uint32_t diff = (last_tick >= first_tick) ? (last_tick - first_tick) : (first_tick - last_tick + 1);
+
+    if (diff > timeout) {
+        retval = true;
+    }
 
     return retval;
 }
@@ -91,9 +95,8 @@ static inline __attribute__((always_inline)) enum Pyro_ReadyState IsSensorReady(
     if (pyro_ready) {
         retval = E_PYRO_READY_STATE_OK;
     } else {
-        uint32_t last_tick = HAL_GetTick();
-        uint32_t time_elapsed = abs((last_tick - first_tick));
-        if (time_elapsed > timeout) {
+        bool time_elapsed = IsTimeElapsed(first_tick, timeout);
+        if (time_elapsed) {
             retval = E_PYRO_READY_STATE_TIMEOUT;
         }
     }
@@ -134,9 +137,8 @@ static void Pyro_ConfUpdateFsm(void)
         break;
 
     case E_PYRO_CONF_UPD_WAIT_FOR_APPLYING:;
-        uint32_t last_tick = HAL_GetTick();
-        uint32_t time_elapsed = abs((last_tick - first_tick));
-        if (time_elapsed > PYRO_CONF_APPLY_DELAY) {
+        bool time_elapsed = IsTimeElapsed(first_tick, PYRO_CONF_APPLY_DELAY);
+        if (time_elapsed) {
             first_tick = HAL_GetTick();
             read_retries_cnt = 0;
             pyro_conf_update_state = E_PYRO_CONF_UPD_WAIT_FOR_READ;
@@ -256,9 +258,8 @@ static void Pyro_AdcReadFsm(void)
         break;
 
     case E_PYRO_ADC_READ_DELAY:;
-        uint32_t last_tick = HAL_GetTick();
-        uint32_t time_elapsed = abs((last_tick - first_tick));
-        if (time_elapsed > PYRO_ADC_READ_DELAY) {
+        bool time_elapsed = IsTimeElapsed(first_tick, PYRO_ADC_READ_DELAY);
+        if (time_elapsed) {
             pyro_adc_state = E_PYRO_ADC_READ_WAIT_READY;
         }
         break;

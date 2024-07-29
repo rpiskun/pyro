@@ -2,7 +2,7 @@
 
 RTC_HandleTypeDef hrtc;
 
-int rtc_init(void)
+int Rtc_Init(void)
 {
     int retval = 0;
     /** Initialize RTC Only */

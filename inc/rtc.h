@@ -3,7 +3,7 @@
 
 #include "stm32l0xx_hal.h"
 
-int rtc_init(void);
+int Rtc_Init(void);
 void HAL_RTC_MspInit(RTC_HandleTypeDef* rtcHandle);
 void HAL_RTC_MspDeInit(RTC_HandleTypeDef* rtcHandle);
 

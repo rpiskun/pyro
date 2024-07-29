@@ -3,6 +3,7 @@
 #include "rtc.h"
 #include "pyd1588.h"
 #include "pyro_fsm.h"
+#include "uart.h"
 #include "main.h"
 
 #define ADC_MEASURE_BUF_SIZE    (16u)
@@ -12,6 +13,8 @@
 
 /* time in ms before go to sleep */
 #define GOTO_SLEEP_TIMEOUT      (2000)
+
+#define UART_BUF_SIZE           (32u)
 
 enum MainFsmState {
     E_MAIN_STATE_INIT = 0,
@@ -44,21 +47,26 @@ static union Pyd1588Config pyro_conf = {
 
 static struct AdcMeasure adc_data = { 0 };
 static int16_t adc_average = 0;
+static uint8_t uart_buf[UART_BUF_SIZE];
 
 static void error_handler(void);
 static int system_init(void);
 static int wakeup_init(void);
-static void enter_stop_mode(void);
+static void GotoStopMode(void);
 static void Main_Fsm(void);
 static void ForceReadDataHandler(void);
 static inline int16_t GetAdcAverage(void);
 
-static inline __attribute__((always_inline)) uint32_t abs(int32_t v)
+static inline __attribute__((always_inline)) bool IsTimeElapsed(uint32_t first_tick, uint32_t timeout)
 {
-    uint32_t retval = 0;
-    int32_t const mask = v >> 31u;
+    bool retval = false;
 
-    retval = (v + mask) ^ mask;
+    uint32_t last_tick = HAL_GetTick();
+    uint32_t diff = (last_tick > first_tick) ? (last_tick - first_tick) : (first_tick - last_tick + 1);
+
+    if (diff > timeout) {
+        retval = true;
+    }
 
     return retval;
 }
@@ -92,25 +100,30 @@ static int system_init(void)
     do {
         HAL_Init();
 
-        // status = clock_init_msi();
-        // status = clock_init_hsi();
-        status = clock_init_max();
+        // status = Clock_InitMsi();
+        // status = Clock_InitHsi();
+        status = Clock_InitHsiMax();
         if (status < 0) {
             break;
         }
 
-        status = power_init();
+        status = Power_Init();
         if (status < 0) {
             break;
         }
 
 
-        status = gpio_init();
+        status = Gpio_Init();
         if (status < 0) {
             break;
         }
 
-        status = rtc_init();
+        status = Rtc_Init();
+        if (status < 0) {
+            break;
+        }
+
+        status = Uart_Init();
         if (status < 0) {
             break;
         }
@@ -121,18 +134,14 @@ static int system_init(void)
 
 static int wakeup_init(void)
 {
-    int status = 0;
+    int retval = 0;
 
-    do {
-        status = clock_init_max();
-        if (status < 0) {
-            break;
-        }
-        /* resume systick timer */
-        HAL_ResumeTick();
-    } while (0);
+    (void)Clock_InitHsiMax();
+    /* resume systick timer */
+    HAL_ResumeTick();
+    (void)Uart_Init();
 
-    return status;
+    return retval;
 }
 
 
@@ -145,7 +154,7 @@ static void error_handler(void)
     }
 }
 
-static void enter_stop_mode(void)
+static void GotoStopMode(void)
 {
     /* suspend systick timer */
     HAL_SuspendTick();
@@ -160,9 +169,8 @@ static void Main_Fsm(void)
 
     bool conf_updated = false;
     bool sensor_ready = false;
+    bool time_elapsed = false;
     // int16_t adc_average = 0;
-    uint32_t last_tick = 0;
-    uint32_t time_elapsed = 0;
 
     switch (fsm_state) {
     case E_MAIN_STATE_INIT:
@@ -182,22 +190,31 @@ static void Main_Fsm(void)
     case E_MAIN_STATE_FORCE_READ:
         ForceReadDataHandler();
         adc_average = GetAdcAverage();
+        if (Uart_IsTxReady()) {
+            uart_buf[0] = 'h';
+            uart_buf[1] = 'e';
+            uart_buf[2] = 'l';
+            uart_buf[3] = 'l';
+            uart_buf[4] = 'o';
+            uart_buf[5] = '\r';
+            uart_buf[6] = '\n';
+            Uart_Send(uart_buf, 7);
+        }
         if ( (adc_average < ADC_SLEEP_LOW_TRESHOLD) ||
              (adc_average > ADC_SLEEP_HIGH_TRESHOLD) ) {
             /* don't go to sleep if signal value is too high/low */
             first_tick = HAL_GetTick();
         }
 
-        last_tick = HAL_GetTick();
-        time_elapsed = abs((last_tick - first_tick));
-        if (time_elapsed > GOTO_SLEEP_TIMEOUT) {
+        time_elapsed = IsTimeElapsed(first_tick, GOTO_SLEEP_TIMEOUT);
+        if (time_elapsed) {
             fsm_state = E_MAIN_STATE_SLEEP;
         }
         break;
 
     case E_MAIN_STATE_SLEEP:
         PYD_EnableWakeupEvent();
-        enter_stop_mode();
+        GotoStopMode();
         wakeup_init();
         (void)PYD_HandleIrq();
         fsm_state = E_MAIN_STATE_HANDLE_INTERRUPT;
@@ -213,9 +230,8 @@ static void Main_Fsm(void)
         break;
 
     case E_MAIN_STATE_BLIND_DELAY:
-        last_tick = HAL_GetTick();
-        time_elapsed = abs((last_tick - first_tick));
-        if (time_elapsed > blind_timeout) {
+        time_elapsed = IsTimeElapsed(first_tick, blind_timeout);
+        if (time_elapsed) {
             fsm_state = E_MAIN_STATE_INIT;
         }
         break;
