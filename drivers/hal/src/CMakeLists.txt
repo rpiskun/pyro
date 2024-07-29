@@ -33,6 +33,8 @@ set(LOCAL_HDRS
     "${CMAKE_CURRENT_SOURCE_DIR}/../inc/stm32l0xx_hal_rtc.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/../inc/stm32l0xx_hal_tim_ex.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/../inc/stm32l0xx_hal_tim.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../inc/stm32l0xx_hal_uart.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../inc/stm32l0xx_hal_uart_ex.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/../inc/stm32l0xx_ll_bus.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/../inc/stm32l0xx_ll_cortex.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/../inc/stm32l0xx_ll_crs.h"
@@ -66,6 +68,8 @@ set(LOCAL_SRCS
     "${CMAKE_CURRENT_SOURCE_DIR}/stm32l0xx_hal_rtc_ex.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/stm32l0xx_hal_tim.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/stm32l0xx_hal_tim_ex.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stm32l0xx_hal_uart.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/stm32l0xx_hal_uart_ex.c"
 )
 
 add_library(${PROJECT_NAME} ${LOCAL_SRCS} ${LOCAL_HDRS})

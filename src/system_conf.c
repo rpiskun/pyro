@@ -1,5 +1,5 @@
 #include "stm32l0xx_hal.h"
-#include "system_init.h"
+#include "system_conf.h"
 
 int clock_init_msi(void)
 {

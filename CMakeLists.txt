@@ -19,7 +19,7 @@ set(LOCAL_HDRS
     "${CMAKE_CURRENT_SOURCE_DIR}/inc/stm32l0xx_hal_conf.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/inc/stm32l0xx_it.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/inc/rtc.h"
-    "${CMAKE_CURRENT_SOURCE_DIR}/inc/system_init.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/inc/system_conf.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/inc/main.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/inc/pyro_fsm.h"
 )
@@ -30,7 +30,7 @@ set(LOCAL_SRCS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/syscalls.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/sysmem.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/rtc.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/system_init.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/system_conf.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/pyro_fsm.c"
 )

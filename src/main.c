@@ -1,5 +1,5 @@
 #include <stdbool.h>
-#include "system_init.h"
+#include "system_conf.h"
 #include "rtc.h"
 #include "pyd1588.h"
 #include "pyro_fsm.h"
@@ -11,7 +11,7 @@
 #define ADC_SLEEP_LOW_TRESHOLD  (-70)
 
 /* time in ms before go to sleep */
-#define GOTO_SLEEP_TIMEOUT      (50)
+#define GOTO_SLEEP_TIMEOUT      (2000)
 
 enum MainFsmState {
     E_MAIN_STATE_INIT = 0,
@@ -43,6 +43,7 @@ static union Pyd1588Config pyro_conf = {
 };
 
 static struct AdcMeasure adc_data = { 0 };
+static int16_t adc_average = 0;
 
 static void error_handler(void);
 static int system_init(void);
@@ -159,7 +160,7 @@ static void Main_Fsm(void)
 
     bool conf_updated = false;
     bool sensor_ready = false;
-    int16_t adc_average = 0;
+    // int16_t adc_average = 0;
     uint32_t last_tick = 0;
     uint32_t time_elapsed = 0;
 
@@ -173,6 +174,7 @@ static void Main_Fsm(void)
         conf_updated = Pyro_IsConfUpdated();
         if (conf_updated) {
             (void)Pyro_StartAdcRead();
+            first_tick = HAL_GetTick();
             fsm_state = E_MAIN_STATE_FORCE_READ;
         }
         break;
@@ -181,7 +183,8 @@ static void Main_Fsm(void)
         ForceReadDataHandler();
         adc_average = GetAdcAverage();
         if ( (adc_average < ADC_SLEEP_LOW_TRESHOLD) ||
-             (adc_average > ADC_SLEEP_LOW_TRESHOLD) ) {
+             (adc_average > ADC_SLEEP_HIGH_TRESHOLD) ) {
+            /* don't go to sleep if signal value is too high/low */
             first_tick = HAL_GetTick();
         }
 
