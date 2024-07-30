@@ -1,9 +1,20 @@
+#include <string.h>
 #include "stm32l0xx_hal.h"
 #include "uart.h"
+
+#define UART_BUF_SIZE       (sizeof(struct BufItem) + 2)
+#define UART_QUEUE_SIZE     (8u)
+#define UART_BUF_FOOTER_POS (sizeof(struct BufItem))
 
 enum TxStatus {
     E_TX_STATUS_READY = 0,
     E_TX_STATUS_BUSY
+};
+
+struct UartQueue {
+    struct BufItem buf[UART_QUEUE_SIZE];
+    uint8_t head;
+    uint8_t tail;
 };
 
 UART_HandleTypeDef huart2 = { 
@@ -17,11 +28,17 @@ UART_HandleTypeDef huart2 = {
         .AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT
 };
 
-static volatile enum TxStatus tx_status;
+static volatile enum TxStatus tx_status = E_TX_STATUS_READY;
+static struct UartQueue tx_queue;
+static uint8_t tx_buf[UART_BUF_SIZE];
 
 int Uart_Init(void)
 {
     int retval = 0;
+
+    tx_queue.head = 0;
+    tx_queue.tail = 0;
+    tx_status = E_TX_STATUS_READY;
 
     do {
         if (HAL_UART_DeInit(&huart2) != HAL_OK) {
@@ -34,6 +51,17 @@ int Uart_Init(void)
             break;
         }
     } while (0);
+
+    return retval;
+}
+
+int Uart_Deinit(void)
+{
+    int retval = 0;
+
+    if (HAL_UART_DeInit(&huart2) != HAL_OK) {
+        retval = -1;
+    }
 
     return retval;
 }
@@ -116,20 +144,64 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
     /* Set transmission flag: transfer complete */
     tx_status = E_TX_STATUS_READY;
-
 }
 
-int Uart_Send(const uint8_t *pdata, uint16_t size)
+int Uart_Send(const struct BufItem *const pitem)
 {
     int retval = 0;
 
-    if (HAL_UART_Transmit_DMA(&huart2, pdata, size) != HAL_OK) {
-        retval = -1;
+    tx_queue.buf[tx_queue.tail] = *pitem;
+    if (++tx_queue.tail >= UART_QUEUE_SIZE) {
+        tx_queue.tail = 0;
     }
 
-    tx_status = E_TX_STATUS_BUSY;
+    /* override is allowed - just shift head */
+    if (tx_queue.head == tx_queue.tail) {
+        if (++tx_queue.head >= UART_QUEUE_SIZE) {
+            tx_queue.head = 0;
+        }
+    }
 
     return retval; 
+}
+
+void Uart_Sender(void)
+{
+    do {
+        if (tx_queue.head == tx_queue.tail) {
+            /* no data to send */
+            break;
+        }
+
+        if (tx_status == E_TX_STATUS_BUSY) {
+            /* there is ongoing transmission */
+            break;
+        }
+
+        struct BufItem item = tx_queue.buf[tx_queue.head];
+        tx_buf[0] = (uint8_t)((item.timestamp & 0xFF000000) >> 24);
+        tx_buf[1] = (uint8_t)((item.timestamp & 0x00FF0000) >> 16);
+        tx_buf[2] = (uint8_t)((item.timestamp & 0x0000FF00) >> 8);
+        tx_buf[3] = (uint8_t)(item.timestamp & 0x000000FF);
+        tx_buf[4] = (uint8_t)(((uint16_t)item.adc_inst & 0xFF00) >> 8);
+        tx_buf[5] = (uint8_t)((uint16_t)item.adc_inst & 0x00FF);
+        tx_buf[6] = (uint8_t)(((uint16_t)item.adc_avg & 0xFF00) >> 8);
+        tx_buf[7] = (uint8_t)((uint16_t)item.adc_avg & 0x00FF);
+
+        tx_buf[UART_BUF_FOOTER_POS] = '\r';
+        tx_buf[UART_BUF_FOOTER_POS + 1] = '\n';
+
+        tx_status = E_TX_STATUS_BUSY;
+        if (HAL_UART_Transmit_DMA(&huart2, tx_buf, UART_BUF_SIZE) != HAL_OK) {
+            /* init sending failed - try next time */
+            tx_status = E_TX_STATUS_READY;
+            break;
+        }
+
+        if (++tx_queue.head >= UART_QUEUE_SIZE) {
+            tx_queue.head = 0;
+        }
+    } while (0);
 }
 
 bool Uart_IsTxReady(void)

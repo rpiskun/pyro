@@ -54,7 +54,7 @@ struct RxConfig {
 };
 
 struct AdcData {
-    int16_t adc_buf[ADC_BUF_SIZE];
+    struct AdcInstantValue adc_buf[ADC_BUF_SIZE];
     uint8_t head;
     uint8_t tail;
     bool read_adc;
@@ -236,7 +236,8 @@ static void Pyro_AdcReadFsm(void)
             int status = PYD_GetRxData(&rx_data);
             if (status == 0) {
                 if (rx_data.out_of_range) {
-                    adc_data.adc_buf[adc_data.tail] = rx_data.adc_val;
+                    adc_data.adc_buf[adc_data.tail].adc_value = rx_data.adc_val;
+                    adc_data.adc_buf[adc_data.tail].timestamp = HAL_GetTick();
                     /* shift tail */
                     if (++adc_data.tail >= ADC_BUF_SIZE) {
                         adc_data.tail = 0;
@@ -351,13 +352,13 @@ int Pyro_StopAdcRead(void)
     return 0;
 }
 
-bool Pyro_GetAdcValue(int16_t *adc_val)
+bool Pyro_GetAdcValue(struct AdcInstantValue *padcval)
 {
     bool retval = false;
 
-    if (adc_val) {
+    if (padcval) {
         if (adc_data.head != adc_data.tail) {
-            *adc_val = adc_data.adc_buf[adc_data.head];
+            *padcval = adc_data.adc_buf[adc_data.head];
 
             /* shift head */
             if (++adc_data.head >= ADC_BUF_SIZE) {

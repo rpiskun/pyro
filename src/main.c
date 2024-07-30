@@ -8,8 +8,8 @@
 
 #define ADC_MEASURE_BUF_SIZE    (16u)
 
-#define ADC_SLEEP_HIGH_TRESHOLD (70)
-#define ADC_SLEEP_LOW_TRESHOLD  (-70)
+#define ADC_SLEEP_HIGH_TRESHOLD (30)
+#define ADC_SLEEP_LOW_TRESHOLD  (-30)
 
 /* time in ms before go to sleep */
 #define GOTO_SLEEP_TIMEOUT      (2000)
@@ -26,9 +26,10 @@ enum MainFsmState {
 };
 
 struct AdcMeasure {
-    int16_t adc_buf[ADC_MEASURE_BUF_SIZE];
+    struct AdcInstantValue adc_buf[ADC_MEASURE_BUF_SIZE];
     int32_t adc_sum;
-    uint8_t window_idx;
+    uint8_t head;
+    uint8_t tail;
 };
 
 static enum MainFsmState fsm_state = E_MAIN_STATE_INIT;
@@ -47,7 +48,6 @@ static union Pyd1588Config pyro_conf = {
 
 static struct AdcMeasure adc_data = { 0 };
 static int16_t adc_average = 0;
-static uint8_t uart_buf[UART_BUF_SIZE];
 
 static void error_handler(void);
 static int system_init(void);
@@ -56,6 +56,7 @@ static void GotoStopMode(void);
 static void Main_Fsm(void);
 static void ForceReadDataHandler(void);
 static inline int16_t GetAdcAverage(void);
+static inline void SendAdcData(const int16_t adc_avg);
 
 static inline __attribute__((always_inline)) bool IsTimeElapsed(uint32_t first_tick, uint32_t timeout)
 {
@@ -89,6 +90,7 @@ int main(void)
     while(1) {
         Pyro_Fsm();
         Main_Fsm();
+        Uart_Sender();
     }
     return 0;
 }
@@ -156,6 +158,7 @@ static void error_handler(void)
 
 static void GotoStopMode(void)
 {
+    (void)Uart_Deinit();
     /* suspend systick timer */
     HAL_SuspendTick();
     HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFE);
@@ -187,19 +190,10 @@ static void Main_Fsm(void)
         }
         break;
 
-    case E_MAIN_STATE_FORCE_READ:
+    case E_MAIN_STATE_FORCE_READ:;
         ForceReadDataHandler();
         adc_average = GetAdcAverage();
-        if (Uart_IsTxReady()) {
-            uart_buf[0] = 'h';
-            uart_buf[1] = 'e';
-            uart_buf[2] = 'l';
-            uart_buf[3] = 'l';
-            uart_buf[4] = 'o';
-            uart_buf[5] = '\r';
-            uart_buf[6] = '\n';
-            Uart_Send(uart_buf, 7);
-        }
+        SendAdcData(adc_average);
         if ( (adc_average < ADC_SLEEP_LOW_TRESHOLD) ||
              (adc_average > ADC_SLEEP_HIGH_TRESHOLD) ) {
             /* don't go to sleep if signal value is too high/low */
@@ -242,18 +236,25 @@ static void Main_Fsm(void)
 static void ForceReadDataHandler(void)
 {
     bool adc_updated = false;
-    int16_t adc_val = 0;
+    struct AdcInstantValue adc_val = { 0 };
 
     do {
         adc_updated = Pyro_GetAdcValue(&adc_val);
         if (adc_updated) {
-            adc_data.adc_sum -= adc_data.adc_buf[adc_data.window_idx];
-            adc_data.adc_sum += adc_val;
+            adc_data.adc_sum -= adc_data.adc_buf[adc_data.tail].adc_value;
+            adc_data.adc_sum += adc_val.adc_value;
 
-            adc_data.adc_buf[adc_data.window_idx] = adc_val;
+            adc_data.adc_buf[adc_data.tail].adc_value = adc_val.adc_value;
+            adc_data.adc_buf[adc_data.tail].timestamp = adc_val.timestamp;
 
-            if (++adc_data.window_idx >= ADC_MEASURE_BUF_SIZE) {
-                adc_data.window_idx = 0;
+            if (++adc_data.tail >= ADC_MEASURE_BUF_SIZE) {
+                adc_data.tail = 0;
+            }
+            /* override is allowed - just shift head */
+            if (adc_data.head == adc_data.tail) {
+                if (++adc_data.head >= ADC_MEASURE_BUF_SIZE) {
+                    adc_data.head = 0;
+                }
             }
         }
     } while (adc_updated);
@@ -262,5 +263,23 @@ static void ForceReadDataHandler(void)
 static inline __attribute__((always_inline)) int16_t GetAdcAverage(void)
 {
     return (adc_data.adc_sum / ADC_MEASURE_BUF_SIZE);
+}
+
+static inline __attribute__((always_inline)) void SendAdcData(const int16_t adc_avg)
+{
+    while (adc_data.head != adc_data.tail) {
+        const struct AdcInstantValue inst_val = adc_data.adc_buf[adc_data.head];
+        struct BufItem item = {
+            .timestamp = inst_val.timestamp,
+            .adc_inst = inst_val.adc_value,
+            .adc_avg = adc_avg
+        };
+
+        (void)Uart_Send(&item);
+
+        if (++adc_data.head >= ADC_MEASURE_BUF_SIZE) {
+            adc_data.head = 0;
+        }
+    }
 }
 
